@@ -158,22 +158,22 @@ A forma definitiva de apresentação será definida durante os testes.
 
 ## 10. Backlog inicial
 
-| Tarefa                                     | Responsável  | Status  |
-| ------------------------------------------ | ------------ | ------- |
-| Criar repositório                          | [Integrante] | A fazer |
-| Preencher README inicial                   | [Integrante] | A fazer |
-| Testar Arduino com semáforo                | [Integrante] | A fazer |
-| Identificar e testar sensor ultrassônico   | [Integrante] | A fazer |
-| Identificar display LCD adequado           | [Integrante] | A fazer |
-| Listar componentes necessários             | [Integrante] | A fazer |
-| Testar comunicação do LCD com Arduino      | [Integrante] | A fazer |
-| Testar leitura da distância pelo sensor    | [Integrante] | A fazer |
-| Definir a altura do reservatório utilizado | [Integrante] | A fazer |
-| Criar cálculo do nível em porcentagem      | [Integrante] | A fazer |
-| Exibir o nível no LCD                      | [Integrante] | A fazer |
-| Testar diferentes níveis de água           | [Integrante] | A fazer |
-| Desenhar arquitetura do sistema            | [Integrante] | A fazer |
-| Registrar primeiro risco técnico           | [Integrante] | A fazer |
+| Tarefa                                     | Status  |
+| ------------------------------------------ | ------- |
+| Criar repositório                          | Feito |
+| Preencher README inicial                   | Feito |
+| Testar Arduino com semáforo                | Feito |
+| Identificar e testar sensor ultrassônico   | A fazer |
+| Identificar display LCD adequado           | A fazer |
+| Listar componentes necessários             | A fazer |
+| Testar comunicação do LCD com Arduino      | A fazer |
+| Testar leitura da distância pelo sensor    | A fazer |
+| Definir a altura do reservatório utilizado | A fazer |
+| Criar cálculo do nível em porcentagem      | A fazer |
+| Exibir o nível no LCD                      | A fazer |
+| Testar diferentes níveis de água           | A fazer |
+| Desenhar arquitetura do sistema            | A fazer |
+| Registrar primeiro risco técnico           | A fazer |
 
 ---
 
@@ -217,23 +217,15 @@ Caso necessário, o código poderá utilizar uma média de várias leituras para
 
 ---
 
-## 13. Repositório
+## 13. Próximos passos
 
-**Repositório:** [Inserir link do GitHub/GitLab]
-
----
-
-## 14. Próximos passos
-
-1. Criar e configurar o repositório.
-2. Testar o Arduino em laboratório.
-3. Testar o sensor ultrassônico.
-4. Testar o display LCD.
-5. Definir as dimensões do reservatório.
-6. Montar o circuito na protoboard.
-7. Desenvolver o código de leitura do sensor.
-8. Implementar o cálculo da porcentagem.
-9. Exibir o nível no LCD.
-10. Realizar testes com diferentes quantidades de água.
+1. Testar o sensor ultrassônico.
+2. Testar o display LCD.
+3. Definir as dimensões do reservatório.
+4. Montar o circuito na protoboard.
+5. Desenvolver o código de leitura do sensor.
+6. Implementar o cálculo da porcentagem.
+7. Exibir o nível no LCD.
+8. Realizar testes com diferentes quantidades de água.
 11. Avaliar a precisão das medições.
 12. Registrar os resultados e atualizar o README.
