@@ -7,6 +7,7 @@
 * João Pedro Alves de Lima - @CapJao
 * João Vitor Paranhos - @joaoparanhoss
 * Rafael Alexandre Alves Bandoch - @RafaelBandoch
+* Heitor Lopes Reis - @dev-heitorreis
 
 ---
 
