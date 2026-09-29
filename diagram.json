@@ -13,52 +13,44 @@
     {
       "type": "wokwi-hc-sr04",
       "id": "ultra",
-      "top": -240,
+      "top": -275,
       "left": -60,
       "attrs": {
         "distance": "308"
       }
     },
     {
-      "type": "wokwi-lcd1602",
-      "id": "lcd",
-      "top": 9.32,
-      "left": 360,
+      "type": "wokwi-resistor",
+      "id": "r_echo1",
+      "top": -100.65,
+      "left": -90,
       "attrs": {
-        "pins": "i2c"
+        "value": "1000"
       }
     },
     {
-      "type": "wokwi-ds18b20",
-      "id": "temp",
-      "top": 140.86,
-      "left": 215,
-      "attrs": {}
-    },
-    {
       "type": "wokwi-resistor",
-      "id": "r_pull",
-      "top": 184.35,
-      "left": 252,
+      "id": "r_echo2",
+      "top": -80.65,
+      "left": -160,
       "attrs": {
-        "value": "4700"
+        "value": "2000"
       }
     },
     {
       "type": "wokwi-led",
       "id": "led",
-      "top": 56.72,
-      "left": -128.8,
+      "top": -57,
+      "left": -160,
       "attrs": {
-        "color": "red",
-        "label": "Bomba"
+        "color": "red"
       }
     },
     {
       "type": "wokwi-resistor",
       "id": "r_led",
-      "top": 93.07,
-      "left": -73.8,
+      "top": -10.65,
+      "left": -100,
       "attrs": {
         "value": "220"
       }
@@ -66,19 +58,44 @@
     {
       "type": "wokwi-buzzer",
       "id": "bz",
-      "top": 24.32,
-      "left": -215,
+      "top": 16,
+      "left": -95,
       "attrs": {
         "volume": "0.1"
       }
     },
     {
+      "type": "wokwi-ds18b20",
+      "id": "temp",
+      "top": 62,
+      "left": 200,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_pull",
+      "top": 189.35,
+      "left": 136,
+      "attrs": {
+        "value": "4700"
+      }
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled",
+      "top": -60,
+      "left": 283,
+      "attrs": {
+        "i2cAddress": "0x3c"
+      }
+    },
+    {
       "type": "wokwi-text",
       "id": "legenda",
-      "top": 320,
-      "left": -245,
+      "top": 275,
+      "left": -230,
       "attrs": {
-        "text": "LIGACOES  (cor do fio -> porta do ESP32)\nHC-SR04    TRIG=D5 verde | ECHO=D34 ciano | VCC=VIN 5V | GND=GND\nLCD 16x2   SDA=D21 magenta | SCL=D22 roxo | VCC=VIN 5V | GND=GND\nDS18B20    DQ=D4 azul | VCC=3V3 | GND=GND | pull-up 4k7 DQ-VCC\nLED bomba  D26 amarelo -> R220 -> anodo | catodo -> GND\nBuzzer     D27 laranja -> pino + | pino - -> GND"
+        "text": "LIGACOES (cor do fio -> pino do ESP32). A cor e sugestao; o que vale e o pino.\nALIMENTACAO   vermelho = 5V (VIN) | laranja = 3V3 | preto = GND\n              embaixo a direita: trilho laranja 3V3 (em cima) e trilho preto GND\nHC-SR04       VCC vermelho -> VIN | GND preto -> GND (lado esquerdo)\n              TRIG verde -> D5\n              ECHO ciano -> R1 1k -> D34, e do D34 o R2 2k -> GND\n              (divisor: o ECHO sai em 5V; o ESP32 so aceita 3,3V)\nLED bomba     D26 marrom -> R 220 -> anodo (perna longa) | catodo -> GND\nBuzzer        D27 roxo -> pino + | pino - -> GND\nOLED SSD1306  SDA azul -> D21 | SCL amarelo -> D22 | VCC laranja -> 3V3 | GND preto\n              (a ordem GND/VCC muda entre modulos: siga o que esta impresso)\nDS18B20       DQ magenta -> D4 | VCC laranja -> 3V3 | GND preto\n              R 4k7 entre o DQ (D4) e o 3V3\n              (lado reto de frente, pernas para baixo: GND - DQ - VCC)"
       }
     }
   ],
@@ -88,23 +105,9 @@
       "esp:VIN",
       "red",
       [
-        "v7.5",
-        "h-256.3",
-        "v370",
-        "h237",
-        "v-75.7",
-        "h12.8"
-      ]
-    ],
-    [
-      "ultra:ECHO",
-      "esp:D34",
-      "cyan",
-      [
-        "v19.5",
-        "h-75.3",
-        "v176.7",
-        "h48.8"
+        "v20.5",
+        "h-216.3",
+        "v316.3"
       ]
     ],
     [
@@ -112,128 +115,71 @@
       "esp:D5",
       "green",
       [
-        "v31.5",
+        "v30.5",
         "h96.7",
-        "v203.1",
-        "h-16.7"
+        "v239.1"
       ]
     ],
     [
       "ultra:GND",
-      "esp:GND.1",
+      "esp:GND.2",
       "black",
       [
-        "v7.5",
-        "h132.7",
-        "v284.7",
-        "h-72.7"
+        "v55.5",
+        "h-221.3",
+        "v271.7"
       ]
     ],
     [
-      "lcd:SDA",
-      "esp:D21",
-      "magenta",
+      "ultra:ECHO",
+      "r_echo1:2",
+      "cyan",
       [
-        "h-262.7"
+        "v85.5"
       ]
     ],
     [
-      "lcd:SCL",
-      "esp:D22",
-      "purple",
+      "r_echo1:1",
+      "esp:D34",
+      "cyan",
       [
-        "h-168",
-        "v-38.3",
-        "h-94.7"
+        "v20",
+        "h85",
+        "v125.7"
       ]
     ],
     [
-      "lcd:GND",
-      "esp:GND.1",
+      "r_echo1:1",
+      "r_echo2:2",
+      "cyan",
+      [
+        "v20"
+      ]
+    ],
+    [
+      "r_echo2:1",
+      "esp:GND.2",
       "black",
       [
-        "h-152",
-        "v105.4",
-        "h-110.7"
+        "h-20",
+        "v221.7"
       ]
     ],
     [
-      "lcd:VCC",
-      "esp:VIN",
-      "red",
-      [
-        "h-34",
-        "v195.2",
-        "h-338",
-        "v-89.7",
-        "h12.8"
-      ]
-    ],
-    [
-      "temp:VCC",
-      "esp:3V3",
-      "red",
-      [
-        "v36",
-        "h-107.7",
-        "v-69.7",
-        "h-30.7"
-      ]
-    ],
-    [
-      "temp:GND",
-      "esp:GND.1",
-      "black",
-      [
-        "v12",
-        "h-74.5",
-        "v-55.3",
-        "h-44.7"
-      ]
-    ],
-    [
-      "temp:DQ",
-      "esp:D4",
-      "blue",
-      [
-        "v24",
-        "h-70.1",
-        "v-96.1",
-        "h-58.7"
-      ]
-    ],
-    [
-      "temp:VCC",
-      "r_pull:1",
-      "red",
-      [
-        "h12.3"
-      ]
-    ],
-    [
-      "temp:DQ",
-      "r_pull:2",
-      "blue",
-      [
-        "v48",
-        "h80.7",
-        "v-48"
-      ]
-    ],
-    [
-      "r_led:2",
       "esp:D26",
-      "yellow",
+      "r_led:2",
+      "brown",
       [
-        "h19.8"
+        "h-19.8",
+        "v-103.7"
       ]
     ],
     [
       "r_led:1",
       "led:A",
-      "yellow",
+      "brown",
       [
-        "h-30"
+        "h-35"
       ]
     ],
     [
@@ -241,21 +187,15 @@
       "esp:GND.2",
       "black",
       [
-        "v77.3",
-        "h75.8",
-        "v-29.3",
-        "h42.8"
+        "v161.7"
       ]
     ],
     [
       "bz:2",
       "esp:D27",
-      "orange",
+      "purple",
       [
-        "v11.7",
-        "h122",
-        "v-11.7",
-        "h60.8"
+        "v8.3"
       ]
     ],
     [
@@ -263,21 +203,110 @@
       "esp:GND.2",
       "black",
       [
-        "v81.7",
-        "h156",
-        "v-43.3",
-        "h36.8"
+        "v46.7"
+      ]
+    ],
+    [
+      "temp:DQ",
+      "esp:D4",
+      "magenta",
+      [
+        "v6.8"
+      ]
+    ],
+    [
+      "temp:GND",
+      "esp:GND.1",
+      "black",
+      [
+        "v128.9",
+        "h-95.5",
+        "v-93.3"
+      ]
+    ],
+    [
+      "temp:VCC",
+      "esp:3V3",
+      "orange",
+      [
+        "v113.9",
+        "h-100.7",
+        "v-68.7"
+      ]
+    ],
+    [
+      "r_pull:1",
+      "esp:D4",
+      "magenta",
+      [
+        "v-77.1"
+      ]
+    ],
+    [
+      "r_pull:2",
+      "esp:3V3",
+      "orange",
+      [
+        "v30",
+        "h-70.8",
+        "v-68.7"
+      ]
+    ],
+    [
+      "oled:SDA",
+      "esp:D21",
+      "blue",
+      [
+        "v-41.5",
+        "h-219.9",
+        "v155.3"
+      ]
+    ],
+    [
+      "oled:SCL",
+      "esp:D22",
+      "yellow",
+      [
+        "v-31.5",
+        "h-198.1",
+        "v116.5"
+      ]
+    ],
+    [
+      "oled:VCC",
+      "esp:3V3",
+      "orange",
+      [
+        "v-21.5",
+        "h-80.6",
+        "v300",
+        "h-126",
+        "v-68.7"
+      ]
+    ],
+    [
+      "oled:GND",
+      "esp:GND.1",
+      "black",
+      [
+        "v-11.5",
+        "h-61.2",
+        "v305",
+        "h-150",
+        "v-93.3"
       ]
     ],
     [
       "esp:TX0",
       "$serialMonitor:RX",
-      ""
+      "",
+      []
     ],
     [
       "esp:RX0",
       "$serialMonitor:TX",
-      ""
+      "",
+      []
     ]
   ],
   "dependencies": {}

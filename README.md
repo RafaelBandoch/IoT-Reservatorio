@@ -13,168 +13,139 @@
 
 ## 2. Família temática
 
-**Família 4 — Reservatório e nível**
+**Família 4 — Nível de reservatório**
 
 ---
 
 ## 3. Projeto
 
-**Sistema de medição do nível de água de um reservatório utilizando Arduino, sensor ultrassônico e display LCD.**
+**Sistema IoT de medição de nível de um reservatório de água, com ESP32, sensor ultrassônico, Wi-Fi e MQTT.** O nível é lido, publicado na rede e só então aciona a bomba (LED) automaticamente — a decisão nunca é tomada localmente no mesmo ciclo da leitura.
 
 ---
 
 ## 4. Problema
 
-É importante acompanhar a quantidade de água disponível em um reservatório para evitar que ele fique vazio ou transborde.
+É importante acompanhar a quantidade de água disponível em um reservatório para evitar que ele fique vazio ou transborde. A verificação manual do nível é imprecisa e exige alguém conferindo o reservatório constantemente, sem histórico e sem aviso a distância.
 
-A verificação manual do nível pode ser imprecisa e exige que uma pessoa confira o reservatório constantemente. Além disso, saber apenas se o reservatório está "baixo", "médio" ou "alto" não fornece uma informação muito precisa sobre a quantidade de água disponível.
-
-O projeto propõe desenvolver um sistema capaz de medir o nível de água do reservatório e apresentar essa informação em **porcentagem de 0% a 100%**, utilizando um display LCD.
+O projeto mede o nível de água do reservatório, publica essa leitura pela rede, aciona automaticamente uma bomba quando o nível está baixo, permite ligar/desligar remotamente, e alerta (display + buzzer) em situações de nível baixo ou crítico.
 
 ---
 
 ## 5. Usuário ou contexto de uso
 
-O sistema poderá ser utilizado em **residências, pequenos estabelecimentos, laboratórios ou outros ambientes que possuam um reservatório de água**.
-
-O usuário poderá consultar o display para saber rapidamente a quantidade aproximada de água disponível no reservatório, sem precisar realizar uma verificação manual.
-
-Exemplo:
-
-```text
-+----------------+
-| NIVEL DA AGUA  |
-|      73%       |
-+----------------+
-```
+O sistema pode ser usado em residências, pequenos estabelecimentos, laboratórios ou qualquer ambiente com um reservatório de água. O usuário acompanha o nível pelo display físico (LCD 16x2) ou por um painel web que recebe os dados em tempo real pela internet, e pode ligar/desligar a bomba manualmente pelo mesmo painel.
 
 ---
 
 ## 6. Objetivo da N1
 
-Desenvolver um protótipo utilizando **Arduino** capaz de medir o nível de água de um reservatório e apresentar o resultado em porcentagem em um **display LCD**.
+Um protótipo com ESP32 que:
 
-O sistema utilizará um **sensor ultrassônico** instalado na parte superior do reservatório para medir a distância entre o sensor e a superfície da água.
-
-O Arduino irá processar essa distância, calcular o percentual aproximado de preenchimento do reservatório e apresentar o resultado no display.
-
-### Exemplo
-
-Considerando um reservatório com 40 cm de altura:
-
-| Distância até a água | Nível aproximado |
-| -------------------: | ---------------: |
-|                40 cm |               0% |
-|                30 cm |              25% |
-|                20 cm |              50% |
-|                10 cm |              75% |
-|                 0 cm |             100% |
-
-Os valores poderão ser ajustados de acordo com as dimensões do reservatório utilizado nos testes.
+1. mede a distância até a água com um sensor ultrassônico HC-SR04;
+2. converte essa distância em percentual de 0% a 100%;
+3. publica essa leitura via MQTT **antes** de qualquer decisão de acionamento;
+4. decide ligar/desligar a bomba (simulada por um LED) a partir do próprio tópico MQTT que ele assina de volta — não a partir do valor calculado localmente;
+5. aceita comando remoto (ligar/desligar manual) por outro tópico MQTT;
+6. confirma o estado da bomba e a execução dos comandos;
+7. sinaliza alertas de nível baixo/crítico no display, no buzzer e via MQTT;
+8. reconecta sozinho ao Wi-Fi e ao broker depois de uma queda.
 
 ---
 
-## 7. Componentes previstos
+## 7. Componentes usados
 
-* Arduino Uno;
-* Sensor ultrassônico;
-* Display LCD 16x2 com módulo I2C;
-* Protoboard;
-* Jumpers;
-* Cabo USB;
-* Computador para programação;
-* Reservatório para realização dos testes.
-
-Os componentes poderão ser alterados conforme os testes realizados em laboratório.
+* ESP32 DevKit (ESP32-D0WD-V3);
+* Sensor ultrassônico HC-SR04 — TRIG no D33, ECHO no D34 através de um divisor resistivo 1kΩ + 1kΩ (o ECHO do sensor sai em 5V, e o ESP32 não é 5V-tolerante);
+* Display LCD 16x2 com módulo I2C (PCF8574) — SDA no D21, SCL no D22;
+* LED — representa a bomba/válvula, no D26 (com resistor em série);
+* Buzzer ativo 5V — alerta sonoro, no D27;
+* Sensor de temperatura e umidade do ar — **planejado, modelo ainda não escolhido** (DHT11 ou DHT22); hoje a temperatura usada no cálculo da velocidade do som é um valor fixo (25°C);
+* Protoboard, jumpers, cabo USB-C;
+* Computador com Arduino CLI para compilar e gravar o firmware.
 
 ---
 
-## 8. Arquitetura inicial
-
-O funcionamento inicial do sistema será:
+## 8. Arquitetura
 
 ```text
-┌──────────────────────┐
-│     RESERVATÓRIO     │
-│                      │
-│      ~~~~~~~~~       │
-│      ~~~~~~~~~       │
-│                      │
-│  Sensor ultrassônico│
-└──────────┬───────────┘
-           │
-           │ Distância
-           ▼
-    ┌──────────────┐
-    │    ARDUINO   │
-    │              │
-    │ Processa a   │
-    │ distância e  │
-    │ calcula o %  │
-    └──────┬───────┘
-           │
-           │ Nível (%)
-           ▼
-    ┌──────────────┐
-    │  DISPLAY LCD │
-    │              │
-    │ NIVEL: 73%   │
-    └──────────────┘
+HC-SR04 (distância) ──▶ ESP32 (firmware)
+                            │
+                            │ mede, filtra (mediana + média móvel)
+                            ▼
+                     publica "nivel" no MQTT
+                            │
+                            ▼
+                 broker.hivemq.com (broker público, internet)
+                    │                           │
+                    ▼                           ▼
+     ESP32 assina o próprio "nivel"      painel-reservatorio.local.html
+     de volta e SÓ AÍ decide ligar/           (navegador, MQTT sobre
+     desligar a bomba (LED) — nunca           WebSocket)
+     direto do valor calculado
+                    │
+                    ▼
+              LED (bomba) + buzzer (alerta)
 ```
 
-### Funcionamento
+A leitura sempre atravessa a rede (publica → broker → assina de volta) antes de qualquer atuação. O sensor nunca aciona o atuador diretamente dentro do mesmo `loop()`.
 
-1. O sensor ultrassônico mede a distância entre ele e a superfície da água.
-2. O Arduino recebe essa distância.
-3. O programa utiliza a altura conhecida do reservatório para calcular o nível de preenchimento.
-4. O resultado é convertido para uma porcentagem entre **0% e 100%**.
-5. O percentual é apresentado no display LCD.
-6. O sistema atualiza a informação continuamente.
+### Tópicos MQTT (prefixo `catolicasc-g4/reservatorio`)
+
+| Tópico | Sentido | Conteúdo |
+| --- | --- | --- |
+| `.../nivel` | ESP32 → broker → ESP32 (e painel) | percentual 0-100, publicado a cada 2s; é a mensagem que dispara a decisão automática |
+| `.../distancia` | ESP32 → broker | distância filtrada em cm |
+| `.../temperatura` | ESP32 → broker | temperatura usada no cálculo (hoje fixa) |
+| `.../bomba` | ESP32 → broker | `DESLIGADA`, `LIGADA:AUTO` ou `LIGADA:MANUAL` (retido) |
+| `.../alerta/nivel` | ESP32 → broker | `NORMAL`, `NIVEL_BAIXO`, `CRITICO_ALTO`, `ACIONAMENTO_AUTOMATICO`, `ENCHIMENTO_CONCLUIDO` |
+| `.../status` | ESP32 → broker | `online` (retido) / `offline` (Last Will) |
+| `.../comando/bomba` | painel → broker → ESP32 | `LIGAR` ou `PARAR` |
+| `.../comando/bomba/confirmacao` | ESP32 → broker | `LIGAR:OK`, `PARAR:OK` ou `ERRO:comando_invalido` |
 
 ---
 
-## 9. Exemplo de visualização
+## 9. Como rodar
 
-O display poderá apresentar:
+1. Copie o modelo de credenciais e preencha com a rede Wi-Fi real:
+   ```bash
+   cp credenciais.exemplo.h credenciais.h
+   ```
+   Edite `WIFI_SSID`/`WIFI_SENHA` e, se necessário, `MQTT_BROKER` (hoje configurado para o broker público `broker.hivemq.com`, sem necessidade de infraestrutura própria).
+2. Compile o firmware:
+   ```bash
+   ./compilar.sh
+   ```
+3. Grave na placa (com o ESP32 conectado por USB):
+   ```bash
+   arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32doit-devkit-v1 --input-dir build build
+   ```
+   (troque `COM3` pela porta serial correta)
+4. Acompanhe o boot pelo monitor serial (115200 baud) — comandos disponíveis: `QUEDA`, `STATUS`, `LIGAR`, `PARAR`, `I2C`.
+5. Abra `painel-reservatorio.local.html` no navegador para ver os dados em tempo real e ligar/desligar a bomba manualmente.
 
-```text
-+----------------+
-| NIVEL DA AGUA  |
-|      73%       |
-+----------------+
-```
-
-Também poderá ser utilizada uma barra visual para facilitar a identificação do nível:
-
-```text
-+----------------+
-| NIVEL: 73%     |
-| [███████---]   |
-+----------------+
-```
-
-A forma definitiva de apresentação será definida durante os testes.
+O repositório também tem um `docker-compose.yml` com Mosquitto + Postgres + coletor, para quem quiser rodar um broker próprio em vez do público — não é necessário para o funcionamento atual do projeto.
 
 ---
 
-## 10. Backlog inicial
+## 10. Backlog
 
-| Tarefa                                     | Status  |
-| ------------------------------------------ | ------- |
-| Criar repositório                          | Feito |
-| Preencher README inicial                   | Feito |
-| Testar Arduino com semáforo                | Feito |
-| Identificar e testar sensor ultrassônico   | A fazer |
-| Identificar display LCD adequado           | A fazer |
-| Listar componentes necessários             | A fazer |
-| Testar comunicação do LCD com Arduino      | A fazer |
-| Testar leitura da distância pelo sensor    | A fazer |
-| Definir a altura do reservatório utilizado | A fazer |
-| Criar cálculo do nível em porcentagem      | A fazer |
-| Exibir o nível no LCD                      | A fazer |
-| Testar diferentes níveis de água           | A fazer |
-| Desenhar arquitetura do sistema            | A fazer |
-| Registrar primeiro risco técnico           | A fazer |
+| Tarefa | Status |
+| --- | --- |
+| Criar repositório | Feito |
+| Migrar de Arduino Uno para ESP32 | Feito |
+| Ligar sensor ultrassônico (com divisor resistivo) | Feito |
+| Ligar display LCD 16x2 via I2C | Feito |
+| Calcular nível em porcentagem, com filtro de mediana + média móvel | Feito |
+| Conectar ao Wi-Fi com reconexão automática | Feito |
+| Publicar telemetria via MQTT | Feito |
+| Reestruturar decisão automática para depender do tópico, não do cálculo local | Feito |
+| Implementar comando remoto (ligar/desligar) | Feito |
+| Confirmar estado/ação via MQTT | Feito |
+| Adicionar alerta sonoro (buzzer) e visual (LED) | Feito |
+| Montar painel web (MQTT sobre WebSocket) | Feito |
+| Escolher e integrar sensor de temperatura/umidade do ar | A fazer |
+| Calibrar `D_VAZIO`/`D_CHEIO` para as dimensões do reservatório real | A fazer |
+| Testar reconexão após queda de Wi-Fi/broker em campo | A fazer |
 
 ---
 
@@ -182,51 +153,22 @@ A forma definitiva de apresentação será definida durante os testes.
 
 ### Risco
 
-O sensor ultrassônico pode apresentar **leituras imprecisas ou instáveis** dependendo da posição do sensor, do formato do reservatório e da movimentação da água.
+O sensor ultrassônico pode apresentar leituras imprecisas, instáveis ou inválidas, dependendo da fiação (o ECHO sai em 5V e passa por um divisor resistivo até o ESP32), do posicionamento e de ruído elétrico no barramento.
 
-### Possível impacto
+### Impacto
 
-Uma leitura incorreta da distância poderá fazer com que o Arduino calcule uma porcentagem de nível diferente da quantidade real de água.
+Leituras inválidas poderiam travar o cálculo do nível ou, pior, ser interpretadas como "reservatório cheio" por engano.
 
-Por exemplo, o reservatório poderá estar com aproximadamente 70% de água, mas o sistema apresentar 65% ou 75%.
+### Mitigação já implementada
 
-### Como investigar
-
-Serão realizados testes com diferentes níveis de água no reservatório, comparando a distância medida pelo sensor com a altura real da água.
-
-Também serão avaliados:
-
-* posicionamento do sensor;
-* distância mínima e máxima de medição;
-* estabilidade das leituras;
-* necessidade de realizar várias medições e calcular uma média;
-* precisão do cálculo da porcentagem.
-
-Caso necessário, o código poderá utilizar uma média de várias leituras para reduzir pequenas oscilações.
+* Leituras fora da faixa físicamente possível (`d < 2cm` ou `d > 450cm`) são descartadas, não usadas no cálculo.
+* Um contador de falhas seguidas (`falhasSensor`) loga no serial, a cada 50 falhas, um diagnóstico de fiação (nível do ECHO em repouso, pinos usados).
+* As leituras válidas passam por filtro de mediana (últimas 5) + média móvel exponencial, reduzindo o efeito de picos isolados.
 
 ---
 
 ## 12. Dúvidas para o professor
 
-* O sensor ultrassônico é adequado para a medição do nível de água proposta?
-* Podemos utilizar um display LCD 16x2 com módulo I2C?
-* O nível deve ser apresentado obrigatoriamente de 0% a 100%?
-* É necessário implementar algum alerta para nível muito baixo ou muito alto?
-* Podemos utilizar uma barra visual junto com a porcentagem no display?
-* A precisão da medição será um critério de avaliação do projeto?
-* Podemos utilizar a média de várias medições para melhorar a estabilidade da leitura?
-
----
-
-## 13. Próximos passos
-
-1. Testar o sensor ultrassônico.
-2. Testar o display LCD.
-3. Definir as dimensões do reservatório.
-4. Montar o circuito na protoboard.
-5. Desenvolver o código de leitura do sensor.
-6. Implementar o cálculo da porcentagem.
-7. Exibir o nível no LCD.
-8. Realizar testes com diferentes quantidades de água.
-11. Avaliar a precisão das medições.
-12. Registrar os resultados e atualizar o README.
+* O broker público (`broker.hivemq.com`) é aceitável para a demonstração da N1, ou é esperado um broker próprio (Mosquitto local)?
+* A calibração de `D_VAZIO`/`D_CHEIO` pode continuar em valores de bancada (30cm/5cm) para a demonstração, ou precisa refletir um reservatório real?
+* O sensor de temperatura do ar (ainda não integrado) é necessário para a N1, ou fica como incremento para a N2?
