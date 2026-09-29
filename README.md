@@ -59,7 +59,7 @@ Um protótipo com ESP32 que:
 * Display LCD 16x2 com módulo I2C (PCF8574) — SDA no D21, SCL no D22;
 * LED — representa a bomba/válvula, no D26 (com resistor em série);
 * Buzzer ativo 5V — alerta sonoro, no D27;
-* Sensor de temperatura e umidade do ar — **planejado, modelo ainda não escolhido** (DHT11 ou DHT22); hoje a temperatura usada no cálculo da velocidade do som é um valor fixo (25°C);
+* Sensor de temperatura DS18B20 — DQ no D4, com resistor de pull-up de 4k7 para o 3V3. A temperatura lida a cada 3s corrige a velocidade do som no cálculo da distância; sem o sensor, o firmware assume 25°C;
 * Protoboard, jumpers, cabo USB-C;
 * Computador com Arduino CLI para compilar e gravar o firmware.
 
@@ -95,7 +95,7 @@ A leitura sempre atravessa a rede (publica → broker → assina de volta) antes
 | --- | --- | --- |
 | `.../nivel` | ESP32 → broker → ESP32 (e painel) | percentual 0-100, publicado a cada 2s; é a mensagem que dispara a decisão automática |
 | `.../distancia` | ESP32 → broker | distância filtrada em cm |
-| `.../temperatura` | ESP32 → broker | temperatura usada no cálculo (hoje fixa) |
+| `.../temperatura` | ESP32 → broker | temperatura do DS18B20 em °C, usada no cálculo da distância |
 | `.../bomba` | ESP32 → broker | `DESLIGADA`, `LIGADA:AUTO` ou `LIGADA:MANUAL` (retido) |
 | `.../alerta/nivel` | ESP32 → broker | `NORMAL`, `NIVEL_BAIXO`, `CRITICO_ALTO`, `ACIONAMENTO_AUTOMATICO`, `ENCHIMENTO_CONCLUIDO` |
 | `.../status` | ESP32 → broker | `online` (retido) / `offline` (Last Will) |
@@ -143,9 +143,9 @@ O repositório também tem um `docker-compose.yml` com Mosquitto + Postgres + co
 | Confirmar estado/ação via MQTT | Feito |
 | Adicionar alerta sonoro (buzzer) e visual (LED) | Feito |
 | Montar painel web (MQTT sobre WebSocket) | Feito |
-| Escolher e integrar sensor de temperatura/umidade do ar | A fazer |
-| Calibrar `D_VAZIO`/`D_CHEIO` para as dimensões do reservatório real | A fazer |
-| Testar reconexão após queda de Wi-Fi/broker em campo | A fazer |
+| Integrar sensor de temperatura (DS18B20) | Feito |
+| Calibrar `D_VAZIO`/`D_CHEIO` para o recipiente real (23,5cm vazio / 4cm cheio) | Feito |
+| Testar reconexão após queda de Wi-Fi/broker (comando `QUEDA`, ver EXECUCAO.md) | Feito |
 
 ---
 
@@ -170,5 +170,3 @@ Leituras inválidas poderiam travar o cálculo do nível ou, pior, ser interpret
 ## 12. Dúvidas para o professor
 
 * O broker público (`broker.hivemq.com`) é aceitável para a demonstração da N1, ou é esperado um broker próprio (Mosquitto local)?
-* A calibração de `D_VAZIO`/`D_CHEIO` pode continuar em valores de bancada (30cm/5cm) para a demonstração, ou precisa refletir um reservatório real?
-* O sensor de temperatura do ar (ainda não integrado) é necessário para a N1, ou fica como incremento para a N2?
