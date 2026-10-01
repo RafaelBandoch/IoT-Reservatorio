@@ -1,21 +1,33 @@
 # Reservatório IoT — camada de captura e persistência
 
-Stack local que captura a telemetria publicada pelo ESP32 (rodando no Wokwi) e
-grava em PostgreSQL.
+Stack local que recebe a telemetria publicada pelo ESP32 (placa real ou Wokwi)
+e grava em PostgreSQL.
 
 ```
-ESP32 (Wokwi)  ──publica──>  HiveMQ Cloud (TLS 8883)
-                                    │
-                          bridge de saída (cliente)
-                                    │
-                                    v
-                       Mosquitto local ──> coletor Python ──> PostgreSQL
+ESP32 (placa ou Wokwi) ──MQTT 1883──> Mosquitto (docker) ──> coletor Python ──> PostgreSQL
+                                           │
+                                           └──WebSocket 9001──> painel no navegador
 ```
 
-O ponto central é a **bridge**: o Wokwi roda nos servidores da Wokwi e não
-alcança esta máquina. Por isso o Mosquitto local é quem **conecta como cliente**
-no broker remoto e espelha os tópicos para dentro. Não é preciso abrir porta no
-roteador — o tráfego é todo de saída.
+O Mosquitto do compose é o **broker do projeto**: o ESP32 conecta direto nele,
+sem passar por nenhum broker na internet. Basta o ESP32 e o computador estarem
+na mesma rede — a de casa ou o roteador do celular. Onde o firmware procura o
+broker (`MQTT_TLS 0` no `credenciais.h`):
+
+| Onde roda o firmware | `MQTT_BROKER` |
+|---|---|
+| Simulador Wokwi (VS Code / Cursor) | `host.wokwi.internal` |
+| Placa real | IP do Mac na rede Wi-Fi (`ipconfig getifaddr en0`) |
+
+O IP do Mac muda quando a rede muda. Na placa real, confira o IP e recompile
+antes de gravar.
+
+### Bridge opcional para um broker remoto
+
+Com `MQTT_BRIDGE=true` no `.env`, o Mosquitto local também **conecta como
+cliente** num broker remoto (HiveMQ Cloud ou público) e espelha os tópicos para
+dentro — o modo usado quando o ESP32 publica num broker da internet. Com
+`MQTT_BRIDGE=false` (padrão) esse trecho do `mosquitto.conf` é cortado na subida.
 
 O espelhamento vai nos dois sentidos, mas a direção é declarada **por tópico**
 em `mosquitto/mosquitto.conf`: telemetria só entra (`in`), comando só sai
@@ -28,7 +40,7 @@ tópico, nenhum é bidirecional e o eco não acontece.
 
 | Serviço     | Imagem               | Porta no host | Papel                                  |
 |-------------|----------------------|---------------|----------------------------------------|
-| `mosquitto` | `eclipse-mosquitto:2`| 1883          | Broker local + bridge para o cluster    |
+| `mosquitto` | `eclipse-mosquitto:2`| 1883, 9001    | Broker do projeto (MQTT e WebSocket)   |
 | `postgres`  | `postgres:16`        | 5432          | Persistência (volume `pgdata`)         |
 | `collector` | build local          | —             | Assina o broker local, grava no banco  |
 | `pgadmin`   | `dpage/pgadmin4:8.14`| 5050          | Interface web para inspecionar o banco |
@@ -37,7 +49,8 @@ tópico, nenhum é bidirecional e o eco não acontece.
 
 ```bash
 cp .env.example .env
-# confira MQTT_REMOTE_* e MQTT_BRIDGE_CLIENT_ID
+# MQTT_BRIDGE=false (padrão): broker próprio, nada mais a preencher
+# MQTT_BRIDGE=true: confira MQTT_REMOTE_* e MQTT_BRIDGE_CLIENT_ID
 
 # o pgAdmin monta este arquivo para entrar no banco sem pedir senha.
 # Ele carrega a senha real, então não é versionado — gere a partir do .env:
@@ -55,7 +68,27 @@ Para derrubar apagando o banco: `docker compose down -v`.
 > O `db/init.sql` só roda quando o volume está vazio. Se alterar o schema,
 > é preciso `docker compose down -v` para reaplicar.
 
-## Verificando se a bridge está funcionando
+## Verificando o broker local
+
+**1. Log do Mosquitto** — com `MQTT_BRIDGE=false`, a primeira linha é:
+
+```
+bridge desligada (MQTT_BRIDGE=false): ESP32 publica direto neste broker
+```
+
+**2. Telemetria chegando** — com o ESP32 ligado (placa ou Wokwi):
+
+```bash
+docker compose exec mosquitto mosquitto_sub -h localhost \
+  -t 'catolicasc-g4/reservatorio/#' -v
+```
+
+Se nada aparece com a placa real, ela não está alcançando o Mac. No monitor
+serial, a linha `MQTT conectado ao broker ...` deve mostrar o mesmo IP que
+`ipconfig getifaddr en0`; se aparecer `falha ao conectar`, o IP no
+`credenciais.h` está velho ou a placa está em outra rede.
+
+## Verificando a bridge (só com MQTT_BRIDGE=true)
 
 **1. Log do Mosquitto** — deve aparecer a conexão com o broker remoto:
 
@@ -127,15 +160,16 @@ seguinte.
 ### Painel ao vivo
 
 [painel-reservatorio.html](painel-reservatorio.html) — abra direto no navegador,
-com dois cliques. Conecta por WebSocket no mesmo cluster que o ESP32 usa e mostra
-nível, distância, temperatura, bomba e alerta em tempo real, além de um botão que
-publica `LIGAR`/`PARAR` em `comando/bomba`.
+com dois cliques. Conecta por WebSocket no Mosquitto local (`ws://localhost:9001`)
+e mostra nível, distância, temperatura, bomba e alerta em tempo real, além de um
+botão que publica `LIGAR`/`PARAR` em `comando/bomba`.
 
 É diferente do pgAdmin de propósito: o painel mostra o **agora** (a cada 2 s),
 o banco mostra o **histórico** (amostrado a cada 30 s).
 
-> As credenciais do cluster estão no próprio HTML, em texto claro. Serve para a
-> demonstração local; não publique esse arquivo num repositório aberto.
+> O painel usa a internet só para baixar a biblioteca MQTT (unpkg). Para abrir
+> em outro aparelho da mesma rede, troque `localhost` pelo IP do Mac na
+> constante `BROKER`.
 
 ### Views prontas
 
@@ -266,7 +300,7 @@ docker compose exec postgres psql -U iot -d reservatorio \
 Como `nivel` é declarado `in` na bridge, esta publicação de teste **não** sobe
 para o cluster — ela fica na sua máquina.
 
-**Testando o caminho de verdade (passando pelo cluster):**
+**Com a bridge ligada, testando o caminho pelo cluster:**
 
 Publique no HiveMQ Cloud em vez do broker local. É o mesmo caminho que a
 telemetria do Wokwi percorre. Precisa de TLS e credenciais:
@@ -301,9 +335,12 @@ pub comando/bomba/confirmacao LIGAR:OK
 Acompanhe com `docker compose logs -f collector`. O log diz o motivo de cada
 gravação (`primeira leitura`, `variacao de 9 p.p.`, `intervalo de amostragem`).
 
-## Broker: HiveMQ Cloud e o plano B
+## Modo bridge: HiveMQ Cloud e broker público
 
-O projeto usa um cluster **privado** no HiveMQ Cloud, com TLS e credenciais.
+> Esta seção só vale com `MQTT_BRIDGE=true`. No modo padrão o ESP32 publica
+> no Mosquitto local e nada daqui é necessário.
+
+Com a bridge ligada, o projeto pode usar um cluster **privado** no HiveMQ Cloud, com TLS e credenciais.
 Isso resolve dois problemas do broker público: ninguém mais publica no prefixo,
 e não há disputa de client id com colegas de turma.
 
@@ -318,6 +355,51 @@ Por isso o firmware usa `WiFiClientSecure` e a bridge recebe um `bridge_cafile`.
 | Bridge | `catolicasc-g4-bridge-a7f3` | `MQTT_BRIDGE_CLIENT_ID` no `.env` |
 | Navegador | gerado sozinho | cliente web do HiveMQ |
 
+### Se a bridge não conectar: rede sem IPv4
+
+Sintoma: o `docker compose logs mosquitto` repete `Connecting bridge` sem
+parar, o painel e o banco ficam vazios, mas o navegador do notebook abre a
+internet normalmente.
+
+Causa: a rede entrega **só IPv6**. O macOS alcança servidores IPv4 por
+tradução (464XLAT — a interface fica com o endereço `192.0.0.2`, que não é
+um IPv4 de verdade), e o Docker Desktop não herda esse tradutor. O
+resultado é que o notebook chega ao HiveMQ e os containers não. Confirme
+com:
+
+```bash
+ifconfig en0 | grep "inet "                  # 192.0.0.2 = rede sem IPv4
+docker compose exec collector python -c "import socket; socket.create_connection(('1.1.1.1',443),timeout=5)"
+```
+
+Se o segundo comando der timeout, é isto. A saída é fazer a bridge sair
+pelo notebook, que sabe traduzir:
+
+```bash
+python3 relay-mqtt.py            # deixe rodando em um terminal
+```
+
+E no `.env`, preencha `MQTT_BRIDGE_VIA_HOST` com o mesmo valor de
+`MQTT_REMOTE_HOST`, depois recrie o broker:
+
+```bash
+docker compose up -d --force-recreate mosquitto
+```
+
+O `extra_hosts` do `docker-compose.yml` passa a resolver o nome do broker
+para o notebook, onde o relay encaminha a conexão. Como o **nome** continua
+sendo o real, o certificado do HiveMQ segue validando — o TLS não é aberto
+em nenhum momento, o relay só repassa bytes.
+
+Confirme que subiu:
+
+```bash
+docker compose logs --since 60s mosquitto | grep -c "Connecting bridge"   # 1 = estável
+```
+
+Numa rede com IPv4 normal, deixe `MQTT_BRIDGE_VIA_HOST` vazio e não rode o
+relay: a bridge liga direto no broker.
+
 **Plano B — voltar ao broker público em 30 segundos:**
 
 ```bash
@@ -325,8 +407,8 @@ cp .env.publico .env
 docker compose up -d --force-recreate mosquitto collector
 ```
 
-E no firmware, troque `MQTT_TLS` para `0` no `credenciais.h` e recompile com
-`./compilar.sh`. Vale manter isso à mão: se a internet da sala bloquear a porta
+E no firmware, ponha `MQTT_TLS 0` e `MQTT_BROKER "broker.hivemq.com"` no
+`credenciais.h` e recompile com `./compilar.sh`. Vale manter isso à mão: se a internet da sala bloquear a porta
 8883, o broker público na 1883 costuma passar.
 
 **Onde a senha aparece:** o repositório só carrega placeholders. O host e a
@@ -346,7 +428,8 @@ rotacione a credencial no painel do HiveMQ quando terminar.
 
 ## Publicando um comando para a bomba
 
-Publicado no broker local, a bridge leva até o ESP32:
+Publicado no broker local, chega direto no ESP32 (ou pela bridge, se ela estiver
+ligada):
 
 ```bash
 docker compose exec mosquitto mosquitto_pub -h localhost \
@@ -426,8 +509,8 @@ código e sem upload novo**, então tudo que acontece depois é do firmware.
 ### Onde fica a lógica
 
 `supervisionarWifi()`, no `sketch.ino`, chamada a cada volta do `loop()`. Ela
-roda a cada 250 ms e **não bloqueia**: enquanto a rede não volta, o sensor, o
-LCD e o controle da bomba seguem funcionando. A cada falha a espera até a
+roda a cada 250 ms e **não bloqueia**: enquanto a rede não volta, o sensor, a
+tela e o controle da bomba seguem funcionando. A cada falha a espera até a
 próxima tentativa dobra (1 s → 2 s → 4 s … teto de 30 s), para não inundar o ar
 com pedidos de associação enquanto o ponto de acesso está fora.
 

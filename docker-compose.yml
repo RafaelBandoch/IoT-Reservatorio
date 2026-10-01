@@ -1,7 +1,8 @@
 # ============================================================
 # Stack de captura e persistência da telemetria do reservatório
 #
-#   mosquitto  -> broker local + bridge de saída para o público
+#   mosquitto  -> broker local (ESP32, painel e coletor ligam
+#                 nele) + bridge opcional para um broker remoto
 #   postgres   -> armazenamento
 #   collector  -> assina o broker local e grava no banco
 # ============================================================
@@ -45,9 +46,24 @@ services:
       MQTT_REMOTE_TLS: ${MQTT_REMOTE_TLS}
       MQTT_REMOTE_USER: ${MQTT_REMOTE_USER}
       MQTT_REMOTE_PASS: ${MQTT_REMOTE_PASS}
+      MQTT_BRIDGE: ${MQTT_BRIDGE:-false}
     ports:
-      # Exposto para inspeção com cliente MQTT a partir do host
+      # MQTT puro: onde o ESP32 (placa ou Wokwi) conecta. O Docker
+      # publica em todas as interfaces, então a placa alcança pelo
+      # IP do Mac na rede Wi-Fi.
       - "${MQTT_LOCAL_PORT}:1883"
+      # WebSocket: onde o painel no navegador conecta.
+      - "${MQTT_WS_PORT:-9001}:9001"
+    # Válvula de escape para rede sem IPv4 nativo (só IPv6 + NAT64). O
+    # macOS traduz IPv4 sozinho, mas o Docker Desktop não herda esse
+    # tradutor e a bridge fica sem rota até o broker. Preenchendo
+    # MQTT_BRIDGE_VIA_HOST com o mesmo host do broker, o container passa
+    # a resolvê-lo para esta máquina, onde o relay-mqtt.py encaminha a
+    # conexão. O hostname continua sendo o real, então o certificado do
+    # broker segue validando normalmente. Vazio = comportamento padrão,
+    # ligando direto no broker (o nome abaixo não resolve para nada).
+    extra_hosts:
+      - "${MQTT_BRIDGE_VIA_HOST:-bridge-direta.invalid}:host-gateway"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf.tmpl:ro
     # O mosquitto.conf não lê variáveis de ambiente, então
@@ -57,21 +73,29 @@ services:
       - sh
       - -c
       - |
-        sed -e "s|__BROKER_REMOTO__|$$MQTT_REMOTE_HOST|g" \
-            -e "s|__PORTA_REMOTA__|$$MQTT_REMOTE_PORT|g" \
-            -e "s|__PREFIXO__|$$MQTT_PREFIXO|g" \
-            -e "s|__CLIENT_ID__|$$MQTT_BRIDGE_CLIENT_ID|g" \
-            /mosquitto/config/mosquitto.conf.tmpl > /tmp/mosquitto.conf
+        TMPL=/mosquitto/config/mosquitto.conf.tmpl
 
-        # TLS e credenciais são acrescentados só quando o broker
-        # remoto pede — assim o mesmo template serve tanto o
-        # HiveMQ Cloud quanto o broker público anônimo.
-        if [ "$$MQTT_REMOTE_TLS" = "true" ]; then
-          echo "bridge_cafile /etc/ssl/certs/ca-certificates.crt" >> /tmp/mosquitto.conf
-        fi
-        if [ -n "$$MQTT_REMOTE_USER" ]; then
-          echo "remote_username $$MQTT_REMOTE_USER" >> /tmp/mosquitto.conf
-          echo "remote_password $$MQTT_REMOTE_PASS" >> /tmp/mosquitto.conf
+        if [ "$$MQTT_BRIDGE" != "true" ]; then
+          # Broker próprio: o template vale só até o marcador da bridge.
+          sed '/^# >>> BRIDGE/,$$d' $$TMPL > /tmp/mosquitto.conf
+          echo "bridge desligada (MQTT_BRIDGE=$$MQTT_BRIDGE): ESP32 publica direto neste broker"
+        else
+          sed -e "s|__BROKER_REMOTO__|$$MQTT_REMOTE_HOST|g" \
+              -e "s|__PORTA_REMOTA__|$$MQTT_REMOTE_PORT|g" \
+              -e "s|__PREFIXO__|$$MQTT_PREFIXO|g" \
+              -e "s|__CLIENT_ID__|$$MQTT_BRIDGE_CLIENT_ID|g" \
+              $$TMPL > /tmp/mosquitto.conf
+
+          # TLS e credenciais são acrescentados só quando o broker
+          # remoto pede — assim o mesmo template serve tanto o
+          # HiveMQ Cloud quanto o broker público anônimo.
+          if [ "$$MQTT_REMOTE_TLS" = "true" ]; then
+            echo "bridge_cafile /etc/ssl/certs/ca-certificates.crt" >> /tmp/mosquitto.conf
+          fi
+          if [ -n "$$MQTT_REMOTE_USER" ]; then
+            echo "remote_username $$MQTT_REMOTE_USER" >> /tmp/mosquitto.conf
+            echo "remote_password $$MQTT_REMOTE_PASS" >> /tmp/mosquitto.conf
+          fi
         fi
 
         exec mosquitto -c /tmp/mosquitto.conf
@@ -82,7 +106,9 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ}
-      MQTT_HOST: mosquitto
+      # ESP32 publica no broker publico, nao no Mosquitto local -- o
+      # coletor assina o mesmo broker pra receber a mesma telemetria.
+      MQTT_HOST: broker.hivemq.com
       MQTT_PORT: 1883
       MQTT_PREFIXO: ${MQTT_PREFIXO}
       POSTGRES_HOST: postgres

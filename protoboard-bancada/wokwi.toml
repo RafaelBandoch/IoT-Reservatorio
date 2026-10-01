@@ -1,0 +1,11 @@
+# Mesmo firmware do projeto principal, com o circuito reduzido para o teste
+# de bancada: protoboard de 400 furos sem o DS18B20 e sem o buzzer
+# (ver diagram.json nesta pasta).
+#
+# No VS Code / Cursor: "Wokwi: Select Config File" e escolha este arquivo.
+# Para recompilar, rode ./compilar.sh na raiz do projeto.
+
+[wokwi]
+version = 1
+firmware = '../build/sketch.ino.merged.bin'
+elf = '../build/sketch.ino.elf'

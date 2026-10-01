@@ -26,5 +26,12 @@ arduino-cli compile \
 rm -rf "$TMP"
 
 TLS=$(grep -E '^#define MQTT_TLS' credenciais.h | awk '{print $3}')
-[ "$TLS" = "1" ] && MODO="cluster HiveMQ com TLS" || MODO="broker público sem TLS"
-echo "Firmware pronto em build/ ($MODO) — rode a simulação no Cursor (F1 > Wokwi: Start Simulator)"
+if [ "$TLS" = "1" ]; then
+  BROKER=$(awk '/^#if MQTT_TLS/{f=1} /^#else/{f=0} f && /MQTT_BROKER/{gsub(/"/,"",$3); print $3}' credenciais.h)
+  MODO="cluster HiveMQ com TLS: $BROKER:8883"
+else
+  BROKER=$(awk '/^#else/{f=1} /^#endif/{f=0} f && /MQTT_BROKER/{gsub(/"/,"",$3); print $3}' credenciais.h)
+  MODO="MQTT sem TLS: $BROKER:1883"
+fi
+echo "Firmware pronto em build/ ($MODO)"
+echo "  simulador: F1 > Wokwi: Start Simulator | placa real: grave build/sketch.ino.merged.bin"

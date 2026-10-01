@@ -63,11 +63,10 @@
 <script src="https://unpkg.com/mqtt@5.7.0/dist/mqtt.min.js"></script>
 <script>
 const PREFIXO = "catolicasc-g4/reservatorio";
-// Cluster privado, via WebSocket seguro. A porta 8884 e o caminho
-// /mqtt sao os do WebSocket — a 8883 e so para MQTT nativo (o ESP32).
-const BROKER  = "wss://seu-cluster.s1.eu.hivemq.cloud:8884/mqtt";
-const USUARIO = "esp32";
-const SENHA   = "troque-aqui";
+// Mosquitto do docker compose, pelo listener WebSocket (porta 9001).
+// O navegador nao fala MQTT puro: a 1883 e so para o ESP32 e o coletor.
+// Aberto em outro computador da rede, troque localhost pelo IP do Mac.
+const BROKER  = "ws://localhost:9001";
 
 const el = id => document.getElementById(id);
 let ligada = false, segundos = 0, recebeuAlgo = false;
@@ -79,13 +78,11 @@ function log(txt) {
 
 const cliente = mqtt.connect(BROKER, {
   clientId: "painel-" + Math.random().toString(16).slice(2, 8),
-  username: USUARIO,
-  password: SENHA,
   clean: true, connectTimeout: 8000, reconnectPeriod: 3000
 });
 
 cliente.on("connect", () => {
-  el("conn").textContent = "conectado ao cluster";
+  el("conn").textContent = "conectado ao broker local";
   el("conn").className = "ok";
   cliente.subscribe(PREFIXO + "/#", { qos: 1 });
   el("btn").disabled = false;
