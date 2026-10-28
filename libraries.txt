@@ -5,4 +5,3 @@ LiquidCrystal I2C
 DallasTemperature
 OneWire
 PubSubClient
-ArduinoJson
