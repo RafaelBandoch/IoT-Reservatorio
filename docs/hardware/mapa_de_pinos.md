@@ -20,9 +20,10 @@ Valores calculados a partir dos datasheets, não medidos. Esquemas: `esquema_med
 
 | Pino ESP32 | Ligado a | Função | Observação |
 |---|---|---|---|
-| VIN (5 V) | Fonte A: carregador USB 5 V / 1 A; VCC do módulo relé | Alimentação | Separada da Fonte B (bomba) |
-| GND | Módulo relé, LEDs, R5 | Terra do circuito lógico | Não vai ao GND da Fonte B |
-| GPIO26 | IN do módulo relé + R5 = 10 kΩ ao GND | ALTO = bomba ligada | Em reset fica BAIXO: bomba desligada |
+| VIN (5 V) | Fonte A: carregador USB 5 V / 1 A | Alimentação | Separada da Fonte B (bomba) |
+| 3V3 | DC+ do módulo relé JQC3F-03VDC | Bobina do relé (3 V) | Cerca de 120 mA com o relé acionado, tirados do regulador de 3,3 V da placa |
+| GND | DC- do módulo relé, LEDs, R5 | Terra do circuito lógico | Não vai ao GND da Fonte B |
+| GPIO26 | In1 do módulo relé (jumper em High) + R5 = 10 kΩ ao GND | ALTO = bomba ligada | Em reset fica BAIXO: bomba desligada |
 | GPIO25 | R6 = 330 Ω + LD1 verde | Operando (AUTOMÁTICO ou MANUAL) | |
 | GPIO27 | R7 = 330 Ω + LD2 vermelho | Estado SEGURO | |
 

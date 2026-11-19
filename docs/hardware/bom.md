@@ -10,7 +10,7 @@
 | Conversor de nível | 1 | Bidirecional 4 canais, BSS138 | Medidor: I2C 3,3 V ↔ 5 V | Comprar |
 | Transistor | 1 | BC547 (ou 2N2222) | Medidor: Q1 | Comprar |
 | Diodo de sinal | 1 | 1N4148 | Medidor: D1 | Comprar |
-| Módulo relé | 1 | 1 canal, 5 V, optoacoplado, relé SRD-05VDC-SL-C, jumper de trigger H/L | Controlador | Comprar |
+| Módulo relé | 1 | 1 canal, relé JQC3F-03VDC (bobina de 3 V, cerca de 120 mA), DC+ no 3V3, DC- no GND, In1 no GPIO26, jumper de trigger em High | Controlador | Comprar |
 | Mini bomba | 1 | Submersível 5 V DC + mangueira de silicone | Controlador: atuador | Comprar |
 | Diodo retificador | 1 | 1N4007 | Bomba: D2 | Comprar |
 | Capacitores | 2 | 100 nF cerâmico; 470 µF / 16 V eletrolítico | Bomba: C1 e C2 | Comprar |

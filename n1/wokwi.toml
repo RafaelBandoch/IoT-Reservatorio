@@ -3,10 +3,10 @@
 # pela fila de compilação do site.
 #
 # Para recompilar depois de mexer no sketch:
-#   ./compilar.sh                    # sketch.ino versionado (broker placeholder)
+#   ./compilar.sh n1                 # n1/sketch.ino (rodar na raiz do repositório)
 #   ./compilar.sh sketch.ino.local   # cópia com as credenciais reais do cluster
 
 [wokwi]
 version = 1
-firmware = 'build/sketch.ino.merged.bin'
-elf = 'build/sketch.ino.elf'
+firmware = '../build/n1/sketch.ino.merged.bin'
+elf = '../build/n1/sketch.ino.elf'

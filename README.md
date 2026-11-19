@@ -160,21 +160,24 @@ O `db/views.sql` cria views prontas para a apresentação (`v_estado_atual`, `v_
 
 | Caminho | O que é |
 | --- | --- |
-| `sketch.ino` | firmware do ESP32 |
-| `credenciais.exemplo.h` | modelo de Wi-Fi/broker (copiar para `credenciais.h`, que não é versionado) |
-| `compilar.sh` | compila o firmware com o Arduino CLI para `build/` |
+| `medidor/` | firmware do ESP32 medidor (rsv-medidor-01): HC-SR04, DS18B20, LCD e buzzer |
+| `controlador/` | firmware do ESP32 controlador (rsv-controlador-01): relé da bomba e LEDs de status |
+| `broker_tls.h` | conexão TLS com o broker, comum aos dois firmwares |
+| `credenciais.exemplo.h` | modelo de Wi-Fi, broker e senha do OTA (copiar para `credenciais.h`, que não é versionado) |
+| `compilar.sh`, `ota.sh` | compila com o Arduino CLI e grava pelo Wi-Fi (OTA) |
 | `libraries.txt` | bibliotecas Arduino usadas |
-| `docker-compose.yml`, `.env.example`, `.env.publico` | stack Mosquitto + PostgreSQL + coletor + pgAdmin |
-| `mosquitto/mosquitto.conf` | template do broker (bridge opcional) |
-| `collector/` | coletor MQTT → PostgreSQL em Python |
-| `db/` | schema e views do banco |
+| `docker-compose.yml`, `.env.example` | Mosquitto (TLS), PostgreSQL, backend e pgAdmin com um comando |
+| `mosquitto/` | configuração do broker, ACL e script dos certificados |
+| `anunciar_broker.py` | anuncia o computador como `aquanivel.local` para os ESP32 acharem o broker |
+| `liberar-firewall.ps1` | libera no Windows as portas do broker, do OTA e do mDNS |
+| `backend/` | FastAPI: valida o contrato, grava, decide a bomba e serve a API; testes em `backend/tests/` |
+| `painel/` | painel web com login, servido pelo backend |
 | `pgadmin/` | servidor do pgAdmin pré-cadastrado |
-| `painel-reservatorio.html` | painel web em tempo real |
-| `limpar.sh` | zera as tabelas antes de uma demonstração |
-| `relay-mqtt.py` | relay para a bridge em redes só IPv6 (ver EXECUCAO.md) |
-| `wokwi.toml`, `diagram.json` | simulação no Wokwi (circuito principal) |
-| `protoboard/`, `protoboard-bancada/` | variantes do circuito no Wokwi (com protoboard; bancada sem DS18B20 e buzzer) |
-| `EXECUCAO.md` | guia detalhado de execução, banco, bridge e teste de reconexão |
+| `backend-teste/` | backend mínimo em Python usado nos testes de bancada |
+| `CONTRATOS.md` | contrato MQTT v1 |
+| `TESTE-DOIS-ESP32.md` | ligação, gravação, OTA e roteiro de testes dos dois ESP32 |
+| `docs/` | arquitetura, hardware (mapa de pinos, BOM, esquemas) e fluxogramas |
+| `n1/` | firmware, painel, coletor e simulação da N1, mantidos como histórico (ver `n1/LEIAME.md`) |
 
 ---
 

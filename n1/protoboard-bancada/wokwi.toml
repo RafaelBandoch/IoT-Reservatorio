@@ -7,5 +7,5 @@
 
 [wokwi]
 version = 1
-firmware = '../build/sketch.ino.merged.bin'
-elf = '../build/sketch.ino.elf'
+firmware = '../../build/n1/sketch.ino.merged.bin'
+elf = '../../build/n1/sketch.ino.elf'

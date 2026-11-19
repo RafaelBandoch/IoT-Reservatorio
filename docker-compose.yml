@@ -4,14 +4,15 @@
 #   mosquitto  -> broker local (ESP32, painel e coletor ligam
 #                 nele) + bridge opcional para um broker remoto
 #   postgres   -> armazenamento
-#   collector  -> assina o broker local e grava no banco
+#   backend    -> FastAPI: valida, grava, decide a bomba, serve
+#                 a API e o painel em http://localhost:8000
 # ============================================================
 
 services:
 
   postgres:
     image: postgres:16
-    container_name: reservatorio-db
+    container_name: aquanivel-db
     restart: unless-stopped
     environment:
       TZ: ${TZ}
@@ -25,8 +26,6 @@ services:
       - pgdata:/var/lib/postgresql/data
       # Rodam só na primeira subida (volume vazio), em ordem
       # alfabética: as tabelas antes das views que dependem delas
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - ./db/views.sql:/docker-entrypoint-initdb.d/views.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -35,7 +34,7 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto:2
-    container_name: reservatorio-mqtt
+    container_name: aquanivel-mqtt
     restart: unless-stopped
     environment:
       TZ: ${TZ}
@@ -47,18 +46,20 @@ services:
       MQTT_REMOTE_USER: ${MQTT_REMOTE_USER}
       MQTT_REMOTE_PASS: ${MQTT_REMOTE_PASS}
       MQTT_BRIDGE: ${MQTT_BRIDGE:-false}
+      # Senhas dos três usuários do broker (só no .env)
+      MQTT_SENHA_BACKEND: ${MQTT_SENHA_BACKEND:?defina MQTT_SENHA_BACKEND no .env}
+      MQTT_SENHA_MEDIDOR: ${MQTT_SENHA_MEDIDOR:?defina MQTT_SENHA_MEDIDOR no .env}
+      MQTT_SENHA_CONTROLADOR: ${MQTT_SENHA_CONTROLADOR:?defina MQTT_SENHA_CONTROLADOR no .env}
     ports:
-      # MQTT puro: onde o ESP32 (placa ou Wokwi) conecta. O Docker
-      # publica em todas as interfaces, então a placa alcança pelo
-      # IP do Mac na rede Wi-Fi.
-      - "${MQTT_LOCAL_PORT}:1883"
-      # WebSocket: onde o painel no navegador conecta.
-      - "${MQTT_WS_PORT:-9001}:9001"
+      # MQTT com TLS: onde os ESP32 conectam. O Docker publica em todas
+      # as interfaces, então a placa alcança pelo IP do computador na
+      # rede Wi-Fi (achado pelo mDNS como aquanivel.local).
+      - "${MQTT_TLS_PORT:-8883}:8883"
     # Válvula de escape para rede sem IPv4 nativo (só IPv6 + NAT64). O
     # macOS traduz IPv4 sozinho, mas o Docker Desktop não herda esse
     # tradutor e a bridge fica sem rota até o broker. Preenchendo
     # MQTT_BRIDGE_VIA_HOST com o mesmo host do broker, o container passa
-    # a resolvê-lo para esta máquina, onde o relay-mqtt.py encaminha a
+    # a resolvê-lo para esta máquina, onde o n1/relay-mqtt.py encaminha a
     # conexão. O hostname continua sendo o real, então o certificado do
     # broker segue validando normalmente. Vazio = comportamento padrão,
     # ligando direto no broker (o nome abaixo não resolve para nada).
@@ -66,6 +67,9 @@ services:
       - "${MQTT_BRIDGE_VIA_HOST:-bridge-direta.invalid}:host-gateway"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf.tmpl:ro
+      - ./mosquitto/acl.conf:/mosquitto/config/acl.tmpl:ro
+      # Gerados por mosquitto/gerar-certificados.sh (fora do git)
+      - ./mosquitto/certs:/certs:ro
     # O mosquitto.conf não lê variáveis de ambiente, então
     # trocamos os marcadores __XXX__ pelos valores do .env antes
     # de subir o broker.
@@ -74,6 +78,20 @@ services:
       - -c
       - |
         TMPL=/mosquitto/config/mosquitto.conf.tmpl
+
+        if [ ! -f /certs/broker.crt ]; then
+          echo "ERRO: faltam os certificados. Rode ./mosquitto/gerar-certificados.sh e suba de novo."
+          exit 1
+        fi
+
+        # Usuário e senha de cada cliente, a partir do .env
+        rm -f /mosquitto/senhas
+        mosquitto_passwd -c -b /mosquitto/senhas backend "$$MQTT_SENHA_BACKEND"
+        mosquitto_passwd -b /mosquitto/senhas rsv-medidor-01 "$$MQTT_SENHA_MEDIDOR"
+        mosquitto_passwd -b /mosquitto/senhas rsv-controlador-01 "$$MQTT_SENHA_CONTROLADOR"
+        sed "s|__PREFIXO__|$$MQTT_PREFIXO|g" /mosquitto/config/acl.tmpl > /mosquitto/acl
+        chown mosquitto:mosquitto /mosquitto/senhas /mosquitto/acl
+        chmod 0700 /mosquitto/senhas /mosquitto/acl
 
         if [ "$$MQTT_BRIDGE" != "true" ]; then
           # Broker próprio: o template vale só até o marcador da bridge.
@@ -100,24 +118,41 @@ services:
 
         exec mosquitto -c /tmp/mosquitto.conf
 
-  collector:
-    build: ./collector
-    container_name: reservatorio-collector
+  # Backend da N3 (FastAPI + aiomqtt): assina o broker, valida contra o
+  # contrato, grava no banco, decide a bomba e serve a API e o painel.
+  backend:
+    build: ./backend
+    container_name: aquanivel-backend
     restart: unless-stopped
     environment:
       TZ: ${TZ}
-      # ESP32 publica no broker publico, nao no Mosquitto local -- o
-      # coletor assina o mesmo broker pra receber a mesma telemetria.
-      MQTT_HOST: broker.hivemq.com
-      MQTT_PORT: 1883
-      MQTT_PREFIXO: ${MQTT_PREFIXO}
       POSTGRES_HOST: postgres
       POSTGRES_PORT_INTERNO: 5432
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      AMOSTRAGEM_INTERVALO_S: ${AMOSTRAGEM_INTERVALO_S}
-      AMOSTRAGEM_DELTA_NIVEL: ${AMOSTRAGEM_DELTA_NIVEL}
+      # Broker do compose, com TLS (o certificado vale para o nome
+      # "mosquitto") e o usuário backend da ACL.
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 8883
+      MQTT_TLS: "true"
+      MQTT_CA: /certs/ca.crt
+      MQTT_USUARIO: backend
+      MQTT_SENHA: ${MQTT_SENHA_BACKEND}
+      MQTT_PREFIXO: ${MQTT_PREFIXO}
+      JWT_SEGREDO: ${JWT_SEGREDO}
+      ADMIN_USUARIO: ${ADMIN_USUARIO}
+      ADMIN_SENHA: ${ADMIN_SENHA}
+      VISUALIZADOR_USUARIO: ${VISUALIZADOR_USUARIO:-}
+      VISUALIZADOR_SENHA: ${VISUALIZADOR_SENHA:-}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      PAINEL_DIR: /painel
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./painel:/painel:ro
+      - ./mosquitto/certs/ca.crt:/certs/ca.crt:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,7 +163,7 @@ services:
   # captura — é só ferramenta de apoio para a demonstração.
   pgadmin:
     image: dpage/pgadmin4:8.14
-    container_name: reservatorio-pgadmin
+    container_name: aquanivel-pgadmin
     restart: unless-stopped
     environment:
       TZ: ${TZ}

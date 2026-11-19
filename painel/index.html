@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AquaNível</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --fundo: #f5f5f4; --cartao: #fff; --texto: #1c1c1a; --suave: #77756f; --fraco: #a3a19a;
+    --linha: #e2e1dd; --azul: #378add; --verde: #2e7d4f; --vermelho: #c0392b; --laranja: #e67e22;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 20px 16px;
+         background: var(--fundo); color: var(--texto); }
+  .app { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 14px; letter-spacing: .09em; text-transform: uppercase; color: var(--suave);
+       font-weight: 500; margin: 0; }
+  h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--suave);
+       font-weight: 500; margin: 0 0 12px 0; }
+  .topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
+  .topo .quem { font-size: 13px; color: var(--suave); }
+  .topo .quem a { color: var(--suave); margin-left: 10px; cursor: pointer; text-decoration: underline; }
+  /* 6 colunas: bloco pequeno ocupa 2, médio 3, largo 6. No celular, tudo em uma coluna. */
+  .grade { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .bloco { background: var(--cartao); border-radius: 12px; padding: 18px 20px; grid-column: span 2; min-width: 0; }
+  .medio { grid-column: span 3; }
+  .largo { grid-column: 1 / -1; }
+  @media (max-width: 860px) { .grade { grid-template-columns: 1fr; } .bloco, .medio { grid-column: 1 / -1; } }
+  .linha { display: flex; justify-content: space-between; font-size: 15px; color: #4a4842; margin: 6px 0; gap: 12px; }
+  .linha b { font-weight: 600; color: var(--texto); text-align: right; }
+  #pct { font-size: 68px; font-weight: 600; line-height: 1; text-align: center; margin: 4px 0; }
+  #barra { height: 22px; background: var(--linha); border-radius: 11px; overflow: hidden; margin: 14px 0 8px 0; }
+  #fill { height: 100%; width: 0; background: var(--azul); transition: width .4s ease, background .4s ease; }
+  #aviso { color: var(--vermelho); font-weight: 600; min-height: 20px; font-size: 14px; text-align: center; }
+  .ponto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px;
+           background: var(--fraco); vertical-align: middle; }
+  .ok { color: var(--verde); } .ok .ponto, .ponto.ok { background: var(--verde); }
+  .ponto.atencao { background: var(--laranja); }
+  .erro { color: var(--vermelho); } .erro .ponto, .ponto.erro { background: var(--vermelho); }
+  .atencao { color: var(--laranja); }
+  button { padding: 14px; font-size: 15px; font-weight: 600; border: 0; border-radius: 10px;
+           background: var(--texto); color: #fff; cursor: pointer; letter-spacing: .04em; }
+  button.secundario { background: var(--linha); color: var(--texto); }
+  button:disabled { background: #c9c7c1; color: #fff; cursor: default; }
+  .botoes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 560px) { .botoes { grid-template-columns: 1fr 1fr; } }
+  .pequeno { font-size: 13px; font-weight: 500; }
+  #resultado { font-size: 14px; min-height: 40px; margin-top: 12px; }
+  .periodos { display: flex; gap: 6px; flex-wrap: wrap; }
+  .periodos button { padding: 6px 12px; font-size: 13px; background: var(--linha); color: var(--texto); }
+  .periodos button.ativo { background: var(--texto); color: #fff; }
+  .graf { position: relative; height: 260px; margin-top: 12px; }
+  .numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 14px; }
+  .numeros div { background: var(--fundo); border-radius: 8px; padding: 10px; }
+  .numeros span { display: block; font-size: 12px; color: var(--suave); }
+  .numeros b { font-size: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  th { color: var(--suave); font-weight: 500; }
+  .rolagem { max-height: 260px; overflow-y: auto; }
+  form.config { display: grid; grid-template-columns: 1fr 110px; gap: 8px 12px; align-items: center; font-size: 14px; }
+  input { font: inherit; padding: 8px 10px; border: 1px solid var(--linha); border-radius: 8px; width: 100%; }
+  form.config button { grid-column: 1 / -1; }
+  .msg { font-size: 13px; min-height: 18px; grid-column: 1 / -1; }
+  #login { max-width: 340px; margin: 12vh auto 0 auto; }
+  #login input { margin-bottom: 10px; }
+  #login button { width: 100%; }
+  .so-admin { display: none !important; }
+  body.admin .so-admin { display: block !important; }
+  .rodape { font-size: 12px; color: var(--fraco); text-align: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<div id="login" class="bloco" hidden>
+  <h1 style="margin-bottom:16px">AquaNível</h1>
+  <form id="form-login">
+    <input id="usuario" placeholder="usuário" autocomplete="username" required>
+    <input id="senha" type="password" placeholder="senha" autocomplete="current-password" required>
+    <button>ENTRAR</button>
+    <div id="login-erro" class="msg erro" style="margin-top:10px"></div>
+  </form>
+</div>
+
+<div class="app" id="app" hidden>
+  <div class="topo">
+    <h1>AquaNível: nível do reservatório</h1>
+    <div class="quem"><span id="quem"></span><a id="sair">sair</a></div>
+  </div>
+
+  <div class="grade">
+    <div class="bloco">
+      <h2>Reservatório</h2>
+      <div id="pct">--</div>
+      <div id="barra"><div id="fill"></div></div>
+      <div id="aviso"></div>
+      <div class="linha"><span>Temperatura da água</span><b id="temp">--</b></div>
+      <div class="linha"><span>Distância até a água</span><b id="dist">--</b></div>
+      <div class="linha"><span>Sensor</span><b id="sensor">--</b></div>
+      <div class="linha"><span>Última leitura</span><b id="idade">--</b></div>
+    </div>
+
+    <div class="bloco">
+      <h2>Bomba e controlador</h2>
+      <div class="linha"><span>Bomba</span><b id="bomba">--</b></div>
+      <div class="linha"><span>Modo</span><b id="modo">--</b></div>
+      <div class="linha"><span>Motivo do modo seguro</span><b id="motivo-seguro">--</b></div>
+      <div class="linha"><span>Liberação do backend</span><b id="libera">--</b></div>
+      <div class="linha"><span>Último comando</span><b id="ultimo-cmd" class="pequeno">--</b></div>
+    </div>
+
+    <div class="bloco">
+      <h2>Dispositivos</h2>
+      <div class="linha"><span>Medidor</span><b id="st-medidor">--</b></div>
+      <div class="linha"><span>Controlador</span><b id="st-controlador">--</b></div>
+      <div class="linha"><span>Backend no broker</span><b id="st-backend">--</b></div>
+      <div class="linha"><span>Firmware do medidor</span><b id="fw-medidor">--</b></div>
+      <div class="linha"><span>Firmware do controlador</span><b id="fw-controlador">--</b></div>
+    </div>
+
+    <div class="bloco largo so-admin">
+      <h2>Comando manual</h2>
+      <div class="botoes">
+        <button data-acao="LIGAR">LIGAR</button>
+        <button data-acao="DESLIGAR">DESLIGAR</button>
+        <button data-acao="MODO_AUTO" class="secundario">MODO AUTOMÁTICO</button>
+        <button data-acao="LIBERAR" class="secundario">LIBERAR</button>
+      </div>
+      <div id="resultado"></div>
+    </div>
+
+    <div class="bloco largo">
+      <div class="topo" style="margin-bottom:0">
+        <h2 style="margin:0">Histórico do nível</h2>
+        <div class="periodos" id="periodos">
+          <button data-h="1" class="ativo">1 h</button><button data-h="6">6 h</button>
+          <button data-h="24">24 h</button><button data-h="168">7 dias</button>
+        </div>
+      </div>
+      <div class="graf"><canvas id="grafico"></canvas></div>
+      <div class="numeros">
+        <div><span>Nível médio</span><b id="a-media">--</b></div>
+        <div><span>Mínimo / máximo</span><b id="a-minmax">--</b></div>
+        <div><span>Bomba ligada</span><b id="a-ligada">--</b></div>
+        <div><span>Acionamentos</span><b id="a-acion">--</b></div>
+      </div>
+    </div>
+
+    <div class="bloco medio">
+      <h2>Alertas</h2>
+      <div class="rolagem"><table><tbody id="alertas"><tr><td>--</td></tr></tbody></table></div>
+    </div>
+
+    <div class="bloco medio">
+      <h2>Comandos recentes</h2>
+      <div class="rolagem"><table>
+        <thead><tr><th>Hora</th><th>Ação</th><th>Origem</th><th>Resultado</th></tr></thead>
+        <tbody id="comandos"></tbody>
+      </table></div>
+    </div>
+
+    <div class="bloco medio so-admin">
+      <h2>Parâmetros do medidor</h2>
+      <form class="config" data-device="rsv-medidor-01">
+        <label>Distância com a caixa vazia (cm)</label><input name="d_vazio_cm" type="number" step="0.1">
+        <label>Distância com a caixa cheia (cm)</label><input name="d_cheio_cm" type="number" step="0.1">
+        <label>Alerta de nível crítico (%)</label><input name="alerta_baixo_pct" type="number">
+        <label>Alerta de transbordo (%)</label><input name="alerta_alto_pct" type="number">
+        <label>Período da telemetria (s)</label><input name="periodo_s" type="number">
+        <button>SALVAR</button><div class="msg"></div>
+      </form>
+    </div>
+
+    <div class="bloco medio so-admin">
+      <h2>Parâmetros do controlador</h2>
+      <form class="config" data-device="rsv-controlador-01">
+        <label>Volta ao automático após (s)</label><input name="t_manual_s" type="number">
+        <label>Tempo máximo ligada (s)</label><input name="t_max_ligada_s" type="number">
+        <label>Sem heartbeat por (s)</label><input name="hb_timeout_s" type="number">
+        <button>SALVAR</button><div class="msg"></div>
+      </form>
+    </div>
+  </div>
+  <div class="rodape">Atualiza sozinho a cada 2 s. Dados pela API do backend; o painel não fala com o broker.</div>
+</div>
+
+<script src="vendor/chart.umd.min.js"></script>
+<script>
+const el = id => document.getElementById(id);
+let token = sessionStorage.getItem("token");
+let perfil = sessionStorage.getItem("perfil");
+let horas = 1, grafico = null;
+
+const NOMES_ALERTA = {
+  NIVEL_CRITICO: "Nível crítico", NIVEL_TRANSBORDO: "Risco de transbordo", SENSOR_FALHA: "Falha no sensor",
+  NORMALIZADO: "Nível normalizado", OFFLINE: "Dispositivo offline", ONLINE: "Dispositivo voltou",
+  MODO_SEGURO: "Controlador em modo seguro",
+};
+const MOTIVOS = {
+  MODO_SEGURO: "controlador em modo seguro", NIVEL_ALTO: "nível alto (90 % ou mais)",
+  SEM_LEITURA: "sem leitura recente do medidor", COMANDO_DUPLICADO: "comando duplicado",
+  MODO_MANUAL: "controlador em modo manual", TEMPO_MAXIMO: "bomba atingiu o tempo máximo",
+  SEM_RESPOSTA: "controlador não respondeu", PAYLOAD_INVALIDO: "comando inválido",
+  BOOT: "acabou de ligar, aguardando o backend", SEM_HEARTBEAT: "sem comunicação com o backend",
+  OTA: "atualizando o firmware pelo Wi-Fi", OTA_FALHOU: "atualização do firmware falhou",
+};
+const motivo = m => m ? (MOTIVOS[m] || m) : "";
+const hora = t => t ? new Date(t).toLocaleTimeString("pt-BR") : "--";
+const dataHora = t => t ? new Date(t).toLocaleString("pt-BR", {day: "2-digit", month: "2-digit",
+                                     hour: "2-digit", minute: "2-digit", second: "2-digit"}) : "--";
+function duracao(s) {
+  if (s == null) return "--";
+  if (s < 60) return Math.round(s) + " s";
+  if (s < 3600) return Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
+  return Math.floor(s / 3600) + " h " + Math.round((s % 3600) / 60) + " min";
+}
+function marca(id, texto, classe) {
+  el(id).innerHTML = (classe ? '<span class="ponto ' + classe + '"></span>' : "") + texto;
+  el(id).className = classe || "";
+}
+
+// ---------- API ----------
+async function api(rota, opcoes = {}) {
+  const r = await fetch("/api" + rota, {...opcoes,
+    headers: {"Content-Type": "application/json", ...(token ? {Authorization: "Bearer " + token} : {})}});
+  if (r.status === 401) { sair(); throw new Error("sessão expirada"); }
+  const corpo = await r.json().catch(() => null);
+  if (!r.ok) throw Object.assign(new Error(corpo && corpo.detail ? JSON.stringify(corpo.detail) : r.statusText),
+                                 {status: r.status, corpo});
+  return corpo;
+}
+
+// ---------- login ----------
+el("form-login").onsubmit = async e => {
+  e.preventDefault();
+  el("login-erro").textContent = "";
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({usuario: el("usuario").value, senha: el("senha").value})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "falha no login");
+    token = d.token; perfil = d.perfil;
+    sessionStorage.setItem("token", token); sessionStorage.setItem("perfil", perfil);
+    sessionStorage.setItem("usuario", d.usuario);
+    iniciar();
+  } catch (erro) { el("login-erro").textContent = erro.message; }
+};
+function sair() {
+  sessionStorage.clear(); token = null;
+  el("app").hidden = true; el("login").hidden = false;
+}
+el("sair").onclick = sair;
+
+// ---------- leitura atual, dispositivos e estado ----------
+async function atualizarAgora() {
+  try {
+    const n = await api("/nivel");
+    const v = n.nivel;
+    el("pct").textContent = v == null ? "--" : Math.round(v) + "%";
+    el("fill").style.width = (v || 0) + "%";
+    el("fill").style.background = v <= 10 ? "var(--vermelho)" : (v >= 95 ? "var(--laranja)" : "var(--azul)");
+    el("aviso").textContent = n.sensor !== "OK" ? "Falha no sensor" : v <= 10 ? "Nível crítico"
+                            : v >= 95 ? "Risco de transbordo" : n.leitura_velha ? "Leitura antiga" : "";
+    el("temp").textContent = n.temperatura == null ? "--" : n.temperatura.toFixed(1) + " °C";
+    el("dist").textContent = n.distancia == null ? "--" : n.distancia.toFixed(1) + " cm";
+    marca("sensor", n.sensor === "OK" ? "OK" : "FALHA", n.sensor === "OK" ? "ok" : "erro");
+    el("idade").textContent = "há " + duracao(n.idade_s);
+    const hb = n.heartbeat;
+    marca("libera", !hb ? "--" : hb.liberaBomba ? "liberada" : "bloqueada: " + motivo(hb.motivo),
+          !hb ? "" : hb.liberaBomba ? "ok" : "atencao");
+  } catch (e) { if (e.status === 404) el("aviso").textContent = "Aguardando a primeira leitura"; }
+
+  try {
+    const d = await api("/dispositivos");
+    for (const k of ["medidor", "controlador"]) {
+      const x = d[k];
+      const texto = x.online == null ? "sem notícia" : x.online ? "online" : "OFFLINE";
+      marca("st-" + k, texto + (x.online && x.sem_dados_s != null && x.sem_dados_s > 30 && k === "medidor"
+                                ? " (sem dados há " + duracao(x.sem_dados_s) + ")" : ""),
+            x.online ? "ok" : x.online === false ? "erro" : "");
+    }
+    marca("st-backend", d.backend.mqtt_conectado ? "conectado" : "desconectado",
+          d.backend.mqtt_conectado ? "ok" : "erro");
+    el("fw-medidor").textContent = d.medidor.fw || "--";
+    el("fw-controlador").textContent = d.controlador.fw || "--";
+    const e = d.controlador.estado;
+    if (e) {
+      const ligada = e.bomba === "LIGADA";
+      const ha = e.ligadaHa_s ?? e.ligada_ha_s;
+      marca("bomba", ligada ? "LIGADA" : "DESLIGADA", ligada ? "ok" : "");
+      marca("modo", e.modo, e.modo === "SEGURO" ? "erro" : e.modo === "MANUAL" ? "atencao" : "ok");
+      el("motivo-seguro").textContent = e.modo === "SEGURO" ? motivo(e.motivoSeguro ?? e.motivo_seguro) : "--";
+      el("ultimo-cmd").textContent = e.ultimoCommandId ?? e.ultimo_command_id ?? "--";
+    }
+  } catch (e) { /* mantém o último valor na tela */ }
+}
+
+// ---------- alertas e comandos ----------
+async function atualizarListas() {
+  try {
+    const alertas = await api("/alertas?limite=30");
+    el("alertas").innerHTML = alertas.length ? alertas.map(a => {
+      const grave = ["NIVEL_CRITICO", "NIVEL_TRANSBORDO", "SENSOR_FALHA", "OFFLINE", "MODO_SEGURO"].includes(a.codigo);
+      const extra = a.detalhe || (a.nivel != null ? "nível " + Math.round(a.nivel) + " %" : "");
+      return `<tr><td>${dataHora(a.ts)}</td><td class="${grave ? "erro" : "ok"}">${NOMES_ALERTA[a.codigo] || a.codigo}</td>
+              <td>${extra}</td></tr>`;
+    }).join("") : "<tr><td>Nenhum alerta nos últimos 7 dias</td></tr>";
+  } catch (e) {}
+  try {
+    const cmds = await api("/comandos?limite=15");
+    el("comandos").innerHTML = cmds.map(c => {
+      const ok = ["EXECUTADO", "CONFIRMADO"].includes(c.status);
+      const res = c.status + (c.motivo ? ": " + motivo(c.motivo) : "") + (c.latencia_ms != null ? " (" + c.latencia_ms + " ms)" : "");
+      return `<tr><td>${hora(c.enviado_em)}</td><td>${c.acao}</td><td>${c.origem}<br><span style="color:var(--suave)">${c.usuario}</span></td>
+              <td class="${ok ? "ok" : c.status === "REJEITADO" || c.status === "EXPIRADO" ? "erro" : ""}">${res}</td></tr>`;
+    }).join("");
+  } catch (e) {}
+}
+
+// ---------- histórico e análise ----------
+async function atualizarHistorico() {
+  const fim = new Date(), inicio = new Date(fim - horas * 3600e3);
+  const q = "?inicio=" + inicio.toISOString() + "&fim=" + fim.toISOString();
+  try {
+    const [h, a] = await Promise.all([api("/historico" + q), api("/analise" + q)]);
+    const rotulo = t => horas > 24 ? dataHora(t).slice(0, 11) : hora(t).slice(0, 5);
+    const dados = {
+      labels: h.pontos.map(p => rotulo(p.ts)),
+      datasets: [
+        {label: "Nível (%)", data: h.pontos.map(p => p.nivel), borderColor: "#378add",
+         backgroundColor: "rgba(55,138,221,.12)", fill: true, tension: .25, pointRadius: 0, yAxisID: "y"},
+        {label: "Temperatura (°C)", data: h.pontos.map(p => p.temperatura), borderColor: "#e67e22",
+         borderDash: [4, 4], tension: .25, pointRadius: 0, yAxisID: "y2"},
+      ]};
+    if (!grafico) {
+      grafico = new Chart(el("grafico"), {type: "line", data: dados, options: {
+        maintainAspectRatio: false, animation: false, interaction: {mode: "index", intersect: false},
+        scales: {y: {min: 0, max: 100, title: {display: true, text: "%"}},
+                 y2: {position: "right", grid: {drawOnChartArea: false}, title: {display: true, text: "°C"}},
+                 x: {ticks: {maxTicksLimit: 10}}},
+        plugins: {legend: {position: "bottom"}}}});
+    } else { grafico.data = dados; grafico.update(); }
+    el("a-media").textContent = a.nivel_medio == null ? "--" : a.nivel_medio + " %";
+    el("a-minmax").textContent = a.nivel_minimo == null ? "--" : a.nivel_minimo + " / " + a.nivel_maximo + " %";
+    el("a-ligada").textContent = duracao(a.bomba_ligada_s);
+    el("a-acion").textContent = a.acionamentos;
+  } catch (e) {}
+}
+el("periodos").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  horas = +b.dataset.h;
+  document.querySelectorAll("#periodos button").forEach(x => x.classList.toggle("ativo", x === b));
+  atualizarHistorico();
+};
+
+// ---------- comando manual ----------
+document.querySelectorAll("[data-acao]").forEach(b => b.onclick = async () => {
+  const botoes = document.querySelectorAll("[data-acao]");
+  botoes.forEach(x => x.disabled = true);
+  el("resultado").innerHTML = "Enviando " + b.dataset.acao + "...";
+  try {
+    let c = await api("/comandos", {method: "POST", body: JSON.stringify({acao: b.dataset.acao})});
+    mostrarComando(c);
+    // O CONFIRMADO chega com o estado logo depois do EXECUTADO.
+    for (let i = 0; i < 4 && !["CONFIRMADO", "REJEITADO", "EXPIRADO"].includes(c.status); i++) {
+      await new Promise(r => setTimeout(r, 800));
+      c = await api("/comandos/" + c.command_id);
+      mostrarComando(c);
+    }
+  } catch (e) {
+    el("resultado").innerHTML = '<span class="erro">Não enviado: ' + e.message + "</span>";
+  } finally {
+    botoes.forEach(x => x.disabled = false);
+    atualizarAgora(); atualizarListas();
+  }
+});
+function mostrarComando(c) {
+  const etapas = c.acks.map(a => a.etapa).join(" → ");
+  const ok = ["EXECUTADO", "CONFIRMADO"].includes(c.status);
+  el("resultado").innerHTML = `<span class="${ok ? "ok" : c.status === "REJEITADO" ? "erro" : ""}"><b>${c.acao}: ${c.status}</b>`
+    + (c.motivo ? " (" + motivo(c.motivo) + ")" : "") + "</span><br>"
+    + `<span style="color:var(--suave)">${c.command_id} | ENVIADO${etapas ? " → " + etapas : ""}`
+    + (c.status === "CONFIRMADO" ? " → CONFIRMADO" : "") + (c.latencia_ms != null ? " | " + c.latencia_ms + " ms" : "") + "</span>";
+}
+
+// ---------- parâmetros ----------
+async function carregarConfigs() {
+  for (const f of document.querySelectorAll("form.config")) {
+    try {
+      const cfg = await api("/config/" + f.dataset.device);
+      for (const i of f.querySelectorAll("input")) if (cfg[i.name] != null) i.value = cfg[i.name];
+    } catch (e) {}
+  }
+}
+document.querySelectorAll("form.config").forEach(f => f.onsubmit = async e => {
+  e.preventDefault();
+  const msg = f.querySelector(".msg"), corpo = {};
+  for (const i of f.querySelectorAll("input")) if (i.value !== "") corpo[i.name] = +i.value;
+  msg.className = "msg"; msg.textContent = "Salvando...";
+  try {
+    await api("/config/" + f.dataset.device, {method: "PUT", body: JSON.stringify(corpo)});
+    msg.className = "msg ok"; msg.textContent = "Salvo e enviado ao dispositivo.";
+  } catch (erro) {
+    const d = erro.corpo && erro.corpo.detail;
+    msg.className = "msg erro";
+    msg.textContent = d && d.erros ? "Fora da faixa: " + d.erros.map(x => x.campo + " (" + x.mensagem + ")").join("; ")
+                                   : erro.message;
+  }
+});
+
+// ---------- ciclo ----------
+let timers = [];
+function iniciar() {
+  el("login").hidden = true; el("app").hidden = false;
+  document.body.classList.toggle("admin", perfil === "admin");
+  el("quem").textContent = (sessionStorage.getItem("usuario") || "") + " (" + perfil + ")";
+  timers.forEach(clearInterval);
+  atualizarAgora(); atualizarListas(); atualizarHistorico();
+  if (perfil === "admin") carregarConfigs();
+  timers = [setInterval(atualizarAgora, 2000), setInterval(atualizarListas, 5000),
+            setInterval(atualizarHistorico, 30000)];
+}
+if (token) iniciar(); else el("login").hidden = false;
+</script>
+</body>
+</html>
