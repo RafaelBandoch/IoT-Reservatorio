@@ -25,7 +25,7 @@
 #include <stdarg.h>
 
 #define DEVICE_ID "rsv-medidor-01"
-#define FW_VERSAO "2.2.0"
+#define FW_VERSAO "2.2.2"
 
 #ifndef OTA_SENHA
   #error "defina OTA_SENHA no credenciais.h (modelo em credenciais.exemplo.h)"
@@ -111,6 +111,13 @@ Preferences nvs;
 LiquidCrystal_I2C* lcd = nullptr;   // so nasce se um LCD responder
 enum TipoTela { SEM_TELA, TELA_LCD };
 TipoTela tipoTela = SEM_TELA;
+uint8_t enderLcd = 0;                 // endereco I2C do LCD em uso
+unsigned long tLcdInit = 0;           // ultima (re)inicializacao do LCD
+const unsigned long LCD_REINICIA_MS = 3000;   // realinhamento sem limpar a tela
+// I2C do LCD a 50 kHz (o padrao e 100 kHz): mais tolerante a ruido e a fio
+// longo, e o LCD nao precisa de mais velocidade que isso.
+const uint32_t I2C_LCD_HZ = 50000;
+char telaL1[17] = "", telaL2[17] = "";   // o que esta na tela, para so reescrever o que mudou
 OneWire fio(PIN_TEMP);
 DallasTemperature sensorTemp(&fio);
 
@@ -337,6 +344,13 @@ void supervisionarWifi() {
 // ---------- buzzer nao bloqueante ----------
 // Cada padrao e uma lista de duracoes em ms (liga, desliga, liga...) que
 // termina em 0. Os repetitivos tocam enquanto o alerta durar.
+//
+// O som sai por PWM numa frequencia fixa, e nao so ligando o pino: assim
+// toca tanto buzzer ativo (que tem oscilador proprio) quanto passivo (que
+// so faz som se receber a frequencia).
+const uint32_t BUZZER_FREQ = 2700;   // Hz, perto da ressonancia dos buzzers comuns
+void buzzerSom(bool ligado) { ledcWrite(PIN_BUZZER, ligado ? 128 : 0); }   // 50 % de 8 bits
+const uint16_t PAD_BOOT[]      = {150, 0};   // um bipe curto na partida: confirma o buzzer
 const uint16_t PAD_CRITICO[]   = {200, 200, 200, 1400, 0};
 const uint16_t PAD_TRANSBORDO[] = {800, 400, 0};
 const uint16_t PAD_FALHA[]     = {100, 2900, 0};
@@ -346,19 +360,19 @@ uint8_t padIdx = 0; bool padRepete = false; unsigned long padT = 0;
 void tocar(const uint16_t* p, bool rep) {
   if (padrao == p) return;
   padrao = p; padIdx = 0; padRepete = rep; padT = millis();
-  digitalWrite(PIN_BUZZER, HIGH);
+  buzzerSom(true);
 }
-void pararBuzzer() { padrao = nullptr; digitalWrite(PIN_BUZZER, LOW); }
+void pararBuzzer() { padrao = nullptr; buzzerSom(false); }
 void atualizarBuzzer() {
   if (!padrao) return;
   if (millis() - padT < padrao[padIdx]) return;
   padT = millis(); padIdx++;
   if (padrao[padIdx] == 0) {
-    if (padRepete) { padIdx = 0; digitalWrite(PIN_BUZZER, HIGH); }
+    if (padRepete) { padIdx = 0; buzzerSom(true); }
     else pararBuzzer();
     return;
   }
-  digitalWrite(PIN_BUZZER, (padIdx % 2 == 0) ? HIGH : LOW);
+  buzzerSom(padIdx % 2 == 0);
 }
 
 // ---------- NVS ----------
@@ -684,7 +698,10 @@ uint8_t varrerI2C(const char* quando) {
 void iniciarTela(uint8_t ender) {
   lcd = new LiquidCrystal_I2C(ender, LCD_COLUNAS, LCD_LINHAS);
   lcd->init();
+  Wire.setClock(I2C_LCD_HZ);
   lcd->backlight();
+  enderLcd = ender;
+  tLcdInit = millis();
   lcd->setCursor(0, 0); lcd->print("AquaNivel");
   lcd->setCursor(0, 1); lcd->print("Medidor...");
   tipoTela = TELA_LCD;
@@ -694,8 +711,45 @@ void iniciarTela(uint8_t ender) {
 // ---------- tela ----------
 // Cada linha e montada inteira com snprintf e escrita por cima da anterior:
 // o preenchimento ate 16 colunas apaga o resto sem clear(), que faria piscar.
+// O LCD recebe cada caractere em duas metades pelo I2C. Ruido (a bomba
+// ligando, fio frouxo) pode fazer uma metade se perder, e dai em diante a
+// tela sai embaralhada. Para se corrigir sozinho, o LCD e reinicializado a
+// cada LCD_REINICIA_MS e logo depois de um erro no barramento.
+// Devolve true quando reinicializou (a tela foi limpa e precisa ser redesenhada).
+bool ressincronizarLcd() {
+  static unsigned long tUltimoErro = 0;
+  unsigned long agora = millis();
+  Wire.beginTransmission(enderLcd);
+  bool erro = Wire.endTransmission() != 0;
+  if (erro) {
+    if (agora - tUltimoErro < 5000) return false;   // LCD fora: tenta de novo em 5 s
+    tUltimoErro = agora;
+    logSerial("LCD: sem resposta no I2C (0x%02X), reinicializando", enderLcd);
+  } else if (agora - tLcdInit < LCD_REINICIA_MS) {
+    return false;
+  } else {
+    // Realinha a comunicacao de 4 bits sem limpar a tela (sem piscar): as
+    // metades 3,3,3,2 voltam o LCD ao inicio de um byte qualquer que seja o
+    // ponto em que ele se perdeu. Em seguida o texto e reescrito por cima.
+    lcd->command(0x33);
+    lcd->command(0x32);
+    lcd->command(0x28);   // 4 bits, 2 linhas, 5x8
+    lcd->command(0x0C);   // display ligado, sem cursor
+    lcd->command(0x06);   // escreve da esquerda para a direita
+    tLcdInit = agora;
+    return true;
+  }
+  // LCD nao respondeu: reinicializacao completa (limpa a tela).
+  lcd->init();
+  Wire.setClock(I2C_LCD_HZ);
+  lcd->backlight();
+  tLcdInit = agora;
+  return true;
+}
+
 void desenharTela() {
   if (tipoTela != TELA_LCD) return;
+  if (ressincronizarLcd()) { telaL1[0] = 0; telaL2[0] = 0; }   // tela limpa: redesenha tudo
   char l1[17], l2[17];
   snprintf(l1, sizeof(l1), "Nivel %3d%% %4.1fC", nivel, temperatura);
   const char* rede = mqtt.connected() ? "MQTT" : (wifiConectado ? "WIFI" : "----");
@@ -707,8 +761,9 @@ void desenharTela() {
       if (distFiltrada < 0) snprintf(l2, sizeof(l2), "Medindo...  %-4s", rede);
       else                  snprintf(l2, sizeof(l2), "D %5.1fcm   %-4s", distFiltrada, rede);
   }
-  lcd->setCursor(0, 0); lcd->print(l1);
-  lcd->setCursor(0, 1); lcd->print(l2);
+  // Menos escrita no barramento, menos chance de um caractere se perder.
+  if (strcmp(l1, telaL1) != 0) { lcd->setCursor(0, 0); lcd->print(l1); strcpy(telaL1, l1); }
+  if (strcmp(l2, telaL2) != 0) { lcd->setCursor(0, 1); lcd->print(l2); strcpy(telaL2, l2); }
 }
 
 // ---------- comandos digitados no monitor serial ----------
@@ -929,6 +984,8 @@ void iniciarOta() {
 void setup() {
   // Buzzer calado antes de qualquer outra coisa.
   pinMode(PIN_BUZZER, OUTPUT); digitalWrite(PIN_BUZZER, LOW);
+  ledcAttach(PIN_BUZZER, BUZZER_FREQ, 8);
+  buzzerSom(false);
   Serial.begin(115200);
   delay(300);   // da tempo do monitor serial engatar antes do cabecalho
   Serial.println();
@@ -948,6 +1005,7 @@ void setup() {
   sensorTemp.begin();
   sensorTemp.setWaitForConversion(false);   // conversao sem bloquear o loop
   iniciarWifi();
+  tocar(PAD_BOOT, false);   // bipe de partida: se nao apitar, conferir o buzzer
 
 #if MQTT_TLS
   // O endereco do broker e resolvido a cada tentativa (conectarMqtt).

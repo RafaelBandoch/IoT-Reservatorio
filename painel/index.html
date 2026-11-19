@@ -196,6 +196,7 @@ const NOMES_ALERTA = {
   NIVEL_CRITICO: "Nível crítico", NIVEL_TRANSBORDO: "Risco de transbordo", SENSOR_FALHA: "Falha no sensor",
   NORMALIZADO: "Nível normalizado", OFFLINE: "Dispositivo offline", ONLINE: "Dispositivo voltou",
   MODO_SEGURO: "Controlador em modo seguro",
+  BOMBA_LIGADA: "Bomba ligada (nível baixo)", BOMBA_DESLIGADA: "Bomba desligada (caixa cheia)",
 };
 const MOTIVOS = {
   MODO_SEGURO: "controlador em modo seguro", NIVEL_ALTO: "nível alto (90 % ou mais)",
@@ -257,11 +258,18 @@ async function atualizarAgora() {
   try {
     const n = await api("/nivel");
     const v = n.nivel;
+    // Leitura velha: o número é só o último conhecido, então fica apagado e o
+    // aviso diz isso antes de qualquer alerta de nível.
+    const velha = n.leitura_velha;
     el("pct").textContent = v == null ? "--" : Math.round(v) + "%";
+    el("pct").style.color = velha ? "var(--fraco)" : "";
     el("fill").style.width = (v || 0) + "%";
-    el("fill").style.background = v <= 10 ? "var(--vermelho)" : (v >= 95 ? "var(--laranja)" : "var(--azul)");
-    el("aviso").textContent = n.sensor !== "OK" ? "Falha no sensor" : v <= 10 ? "Nível crítico"
-                            : v >= 95 ? "Risco de transbordo" : n.leitura_velha ? "Leitura antiga" : "";
+    el("fill").style.background = velha ? "var(--fraco)"
+                                : v <= 10 ? "var(--vermelho)" : (v >= 95 ? "var(--laranja)" : "var(--azul)");
+    el("aviso").textContent = velha ? "Sem leitura recente do medidor (último valor conhecido)"
+                            : n.sensor !== "OK" ? "Falha no sensor" : v <= 10 ? "Nível crítico"
+                            : v >= 95 ? "Risco de transbordo" : "";
+    el("aviso").style.color = velha ? "var(--suave)" : "";
     el("temp").textContent = n.temperatura == null ? "--" : n.temperatura.toFixed(1) + " °C";
     el("dist").textContent = n.distancia == null ? "--" : n.distancia.toFixed(1) + " cm";
     marca("sensor", n.sensor === "OK" ? "OK" : "FALHA", n.sensor === "OK" ? "ok" : "erro");
@@ -285,9 +293,15 @@ async function atualizarAgora() {
     el("fw-medidor").textContent = d.medidor.fw || "--";
     el("fw-controlador").textContent = d.controlador.fw || "--";
     const e = d.controlador.estado;
-    if (e) {
+    if (e && d.controlador.online === false) {
+      // Controlador offline: o estado guardado é antigo. A placa sempre volta
+      // com a bomba desligada, então não dá para afirmar o último valor.
+      marca("bomba", "desconhecido (último: " + e.bomba + ")", "");
+      marca("modo", "desconhecido (último: " + e.modo + ")", "");
+      el("motivo-seguro").textContent = "--";
+      el("ultimo-cmd").textContent = e.ultimoCommandId ?? e.ultimo_command_id ?? "--";
+    } else if (e) {
       const ligada = e.bomba === "LIGADA";
-      const ha = e.ligadaHa_s ?? e.ligada_ha_s;
       marca("bomba", ligada ? "LIGADA" : "DESLIGADA", ligada ? "ok" : "");
       marca("modo", e.modo, e.modo === "SEGURO" ? "erro" : e.modo === "MANUAL" ? "atencao" : "ok");
       el("motivo-seguro").textContent = e.modo === "SEGURO" ? motivo(e.motivoSeguro ?? e.motivo_seguro) : "--";

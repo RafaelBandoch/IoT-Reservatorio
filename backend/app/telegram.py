@@ -40,13 +40,16 @@ TITULOS = {
     "MODO_SEGURO": "ALERTA: bomba bloqueada (controlador em modo seguro)",
     "OFFLINE": "ALERTA: dispositivo sem conexão",
     "ONLINE": "Dispositivo conectado de novo",
+    "BOMBA_LIGADA": "Bomba ligada automaticamente (nível baixo)",
+    "BOMBA_DESLIGADA": "Bomba desligada automaticamente (caixa cheia)",
 }
 
 
 def formatar(device_id: str, codigo: str, texto: str, quando: Optional[datetime] = None) -> str:
     quando = (quando or datetime.now(timezone.utc)).astimezone(FUSO)
     linhas = [f"AquaNível: {TITULOS.get(codigo, codigo)}"]
-    if texto:
+    # Em OFFLINE e ONLINE o texto só repete o nome do dispositivo, que já vai abaixo.
+    if texto and codigo not in ("OFFLINE", "ONLINE"):
         linhas.append(texto[0].upper() + texto[1:])
     linhas.append(f"Dispositivo: {NOMES.get(device_id, device_id)} ({device_id})")
     linhas.append(f"Horário: {quando:%d/%m %H:%M:%S}")

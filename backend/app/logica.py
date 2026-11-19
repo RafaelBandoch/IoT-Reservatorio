@@ -46,6 +46,7 @@ class Resposta:
     etapa: str
     ms_desde_envio: float
     ms_desde_telemetria: Optional[float]
+    acao: str = ""
 
 
 class Regras:
@@ -131,4 +132,4 @@ class Regras:
             return None
         self.cmd_regra = None
         return Resposta(command_id, etapa, (agora - c.enviado) * 1000,
-                        (agora - c.origem) * 1000 if c.origem is not None else None)
+                        (agora - c.origem) * 1000 if c.origem is not None else None, c.acao)

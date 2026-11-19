@@ -27,6 +27,12 @@ async def esvaziar(t):
     await asyncio.sleep(0)
 
 
+def test_conexao_nao_repete_o_nome():
+    msg = formatar("rsv-controlador-01", "ONLINE", "rsv-controlador-01 voltou",
+                   datetime(2026, 11, 18, 18, 30, tzinfo=timezone.utc))
+    assert "voltou" not in msg and "Dispositivo: controlador (rsv-controlador-01)" in msg
+
+
 def test_formatar():
     msg = formatar("rsv-medidor-01", "NIVEL_CRITICO", "nível 8 %",
                    datetime(2026, 11, 18, 18, 30, tzinfo=timezone.utc))

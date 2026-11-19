@@ -132,6 +132,30 @@ async def test_ciclo_ack_libera_a_regra_e_resolve_a_espera(enviar, ponte, repo, 
     assert repo.confirmados == [cid]
 
 
+async def test_regra_executada_avisa_bomba_ligada_e_desligada(enviar, ponte, repo, avisos, exemplo):
+    await preparar(ponte, enviar, exemplo)
+    await enviar("rsv-medidor-01", "telemetria", exemplo("telemetria", nivel=nivel(5)))
+    cid = ponte.cliente.de_tipo("cmd")[0]["payload"]["commandId"]
+    assert avisos == [] or avisos[-1][1] != "BOMBA_LIGADA"   # só depois do EXECUTADO
+    await enviar("rsv-controlador-01", "ack", exemplo("ack", commandId=cid, etapa="EXECUTADO"))
+    assert avisos[-1][:2] == ("rsv-controlador-01", "BOMBA_LIGADA") and "5 %" in avisos[-1][2]
+    assert repo.alertas[-1]["codigo"] == "BOMBA_LIGADA"
+    # Caixa cheia: a regra desliga e avisa.
+    await enviar("rsv-controlador-01", "estado", exemplo("estado", modo="AUTOMATICO", bomba="LIGADA"))
+    await enviar("rsv-medidor-01", "telemetria", exemplo("telemetria", nivel=nivel(92)))
+    cid = ponte.cliente.de_tipo("cmd")[-1]["payload"]["commandId"]
+    await enviar("rsv-controlador-01", "ack", exemplo("ack", commandId=cid, etapa="EXECUTADO"))
+    assert avisos[-1][1] == "BOMBA_DESLIGADA"
+
+
+async def test_rejeitado_nao_avisa_bomba(enviar, ponte, avisos, exemplo):
+    await preparar(ponte, enviar, exemplo)
+    await enviar("rsv-medidor-01", "telemetria", exemplo("telemetria", nivel=nivel(5)))
+    cid = ponte.cliente.de_tipo("cmd")[0]["payload"]["commandId"]
+    await enviar("rsv-controlador-01", "ack", exemplo("ack", commandId=cid, etapa="REJEITADO", motivo="MODO_SEGURO"))
+    assert all(a[1] not in ("BOMBA_LIGADA", "BOMBA_DESLIGADA") for a in avisos)
+
+
 async def test_comando_manual_rejeitado(ponte, enviar, exemplo):
     cid = await ponte.enviar_comando("LIGAR", "manual", "admin")
     await enviar("rsv-controlador-01", "ack", exemplo("ack", commandId=cid, etapa="REJEITADO", motivo="NIVEL_ALTO"))

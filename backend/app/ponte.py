@@ -328,6 +328,12 @@ class Ponte:
             futuro = self.esperas.get(m.commandId)
             if futuro and not futuro.done():
                 futuro.set_result({"etapa": m.etapa, "motivo": m.motivo})
+        # A regra agiu de fato: avisa o morador que a bomba ligou ou desligou.
+        if r and r.etapa == "EXECUTADO" and r.acao in ("LIGAR", "DESLIGAR"):
+            nivel = self.regras.leitura.nivel if self.regras.leitura else None
+            codigo = "BOMBA_LIGADA" if r.acao == "LIGAR" else "BOMBA_DESLIGADA"
+            detalhe = f"nível {nivel:.0f} %" if nivel is not None else ""
+            await self._alerta_backend(c.CONTROLADOR, codigo, nivel, detalhe)
 
     async def _estado(self, m: c.Estado, chegada: datetime, mono: float) -> None:
         anterior = self.vivo["estado"]
