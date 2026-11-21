@@ -28,6 +28,10 @@ from .telegram import criar_do_ambiente as criar_telegram
 logging.basicConfig(level=os.getenv("LOG_NIVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("aquanivel")
+# O httpx registra cada requisição com a URL completa, e a URL da Bot API do
+# Telegram leva o token: só avisos e erros dele vão para o log.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 PAINEL = Path(os.getenv("PAINEL_DIR", Path(__file__).resolve().parent.parent / "painel"))
 

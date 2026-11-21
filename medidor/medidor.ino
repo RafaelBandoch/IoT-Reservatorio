@@ -25,7 +25,7 @@
 #include <stdarg.h>
 
 #define DEVICE_ID "rsv-medidor-01"
-#define FW_VERSAO "2.2.2"
+#define FW_VERSAO "2.3.1"
 
 #ifndef OTA_SENHA
   #error "defina OTA_SENHA no credenciais.h (modelo em credenciais.exemplo.h)"
@@ -66,6 +66,7 @@ const float ALFA_EMA = 0.30;
 const int NIVEL_DELTA_EVENTO = 5;
 const int LIMIAR_LIGA  = 10;
 const int LIMIAR_ALTO  = 90;
+const int NIVEL_BAIXO_LCD = 25;   // ate aqui o LCD mostra "Baixo" (acima do alerta critico)
 const unsigned long PUB_INTERVALO_MIN = 1000;
 
 // Faixas plausiveis do contrato. Fora delas a leitura e descartada.
@@ -752,14 +753,20 @@ void desenharTela() {
   if (ressincronizarLcd()) { telaL1[0] = 0; telaL2[0] = 0; }   // tela limpa: redesenha tudo
   char l1[17], l2[17];
   snprintf(l1, sizeof(l1), "Nivel %3d%% %4.1fC", nivel, temperatura);
-  const char* rede = mqtt.connected() ? "MQTT" : (wifiConectado ? "WIFI" : "----");
+  // Linha de baixo para quem mora na casa: o alerta, se houver, ou a situacao
+  // da conexao. Distancia e detalhe da rede ficam no painel e no serial. Um
+  // texto que quase nao muda tambem reescreve menos o LCD.
   switch (alerta) {
-    case AL_CRITICO:    snprintf(l2, sizeof(l2), "CRITICO     %-4s", rede); break;
-    case AL_TRANSBORDO: snprintf(l2, sizeof(l2), "TRANSBORDO  %-4s", rede); break;
-    case AL_FALHA:      snprintf(l2, sizeof(l2), "FALHA SENSOR%-4s", rede); break;
-    default:
-      if (distFiltrada < 0) snprintf(l2, sizeof(l2), "Medindo...  %-4s", rede);
-      else                  snprintf(l2, sizeof(l2), "D %5.1fcm   %-4s", distFiltrada, rede);
+    case AL_CRITICO:    snprintf(l2, sizeof(l2), "%-16s", "NIVEL CRITICO!"); break;
+    case AL_TRANSBORDO: snprintf(l2, sizeof(l2), "%-16s", "VAI TRANSBORDAR!"); break;
+    case AL_FALHA:      snprintf(l2, sizeof(l2), "%-16s", "FALHA NO SENSOR"); break;
+    default: {
+      // "Cheio" a partir de LIMIAR_ALTO (90 %), o mesmo ponto em que o backend
+      // desliga a bomba; "Baixo" entre o alerta critico e NIVEL_BAIXO_LCD.
+      const char* faixa = nivel >= LIMIAR_ALTO ? "Cheio" : nivel <= NIVEL_BAIXO_LCD ? "Baixo" : "Normal";
+      if (distFiltrada < 0) snprintf(l2, sizeof(l2), "%-16s", "Medindo...");
+      else                  snprintf(l2, sizeof(l2), "%-9s%7s", faixa, mqtt.connected() ? "Online" : "Offline");
+    }
   }
   // Menos escrita no barramento, menos chance de um caractere se perder.
   if (strcmp(l1, telaL1) != 0) { lcd->setCursor(0, 0); lcd->print(l1); strcpy(telaL1, l1); }
@@ -1005,7 +1012,14 @@ void setup() {
   sensorTemp.begin();
   sensorTemp.setWaitForConversion(false);   // conversao sem bloquear o loop
   iniciarWifi();
-  tocar(PAD_BOOT, false);   // bipe de partida: se nao apitar, conferir o buzzer
+  // Bipe de partida so quando a placa e ligada ou o botao EN e apertado: no
+  // reinicio automatico (sem broker) ou depois de um OTA ele ficaria repetitivo.
+  esp_reset_reason_t motivoReset = esp_reset_reason();
+  if (motivoReset == ESP_RST_POWERON || motivoReset == ESP_RST_EXT) {
+    tocar(PAD_BOOT, false);   // se nao apitar, conferir o buzzer
+  } else {
+    logSerial("reinicio por software (motivo %d): sem bipe de partida", (int)motivoReset);
+  }
 
 #if MQTT_TLS
   // O endereco do broker e resolvido a cada tentativa (conectarMqtt).
@@ -1015,6 +1029,23 @@ void setup() {
 #endif
   mqtt.setCallback(aoReceber);
   mqtt.setBufferSize(512);
+}
+
+// Reinicio automatico: com Wi-Fi mas sem conseguir falar com o broker por
+// SEM_BROKER_MAX_MS, a placa reinicia. Em testes o medidor ficou ate 2 min e
+// meio preso tentando reconectar; reiniciar limpa a pilha de rede e o TLS.
+// Seguro aqui porque o medidor nao aciona nada: a regra local (LCD e buzzer)
+// volta funcionando logo no boot, e a configuracao esta na NVS.
+const unsigned long SEM_BROKER_MAX_MS = 120000;
+
+void vigiarBroker(unsigned long agora) {
+  static unsigned long tSemBroker = 0;
+  if (!wifiConectado || mqtt.connected()) { tSemBroker = 0; return; }
+  if (tSemBroker == 0) { tSemBroker = agora; return; }
+  if (agora - tSemBroker < SEM_BROKER_MAX_MS) return;
+  logSerial("sem broker ha %lu s com Wi-Fi ativo: reiniciando a placa", (agora - tSemBroker) / 1000);
+  delay(200);   // deixa a linha sair no serial
+  ESP.restart();
 }
 
 void loop() {
@@ -1047,6 +1078,7 @@ void loop() {
   }
 
   if (agora - tStatus >= 10000) { tStatus = agora; imprimirStatus(); }
+  vigiarBroker(agora);
 
   atualizarBuzzer();
   supervisionarWifi();

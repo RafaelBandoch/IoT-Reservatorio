@@ -160,7 +160,13 @@ class Ponte:
         mudou = self.regras.libera_publicada is None or self.regras.libera_publicada[0] != libera
         self.seq_hb += 1
         hb = c.Heartbeat(ts=_ts(), seq=self.seq_hb, liberaBomba=libera, motivo=motivo)
-        await self.cliente.publish(self.topico("backend", "heartbeat"), hb.model_dump_json(), qos=0, retain=False)
+        try:
+            await self.cliente.publish(self.topico("backend", "heartbeat"), hb.model_dump_json(), qos=0, retain=False)
+        except aiomqtt.MqttError as erro:
+            # Broker caindo: quem chamou (status, telemetria) segue gravando e
+            # alertando. Sem heartbeat, o controlador entra em SEGURO sozinho.
+            log.warning("heartbeat não publicado (%s)", erro)
+            return
         self.regras.heartbeat_publicado(libera, motivo)
         self.t_ultimo_hb = agora
         self.vivo["heartbeat"] = hb.model_dump(mode="json")
@@ -181,7 +187,11 @@ class Ponte:
         await self.repo.gravar_comando_enviado(cid, acao, origem, usuario, agora)
         if origem == "regra":
             self.regras.regra_enviada(cid, acao, time.monotonic(), t_origem)
-        await self.cliente.publish(self.topico(c.CONTROLADOR, "cmd"), cmd.model_dump_json(), qos=1, retain=False)
+        try:
+            await self.cliente.publish(self.topico(c.CONTROLADOR, "cmd"), cmd.model_dump_json(), qos=1, retain=False)
+        except aiomqtt.MqttError as erro:
+            # Fica gravado como ENVIADO e vira EXPIRADO; a API responde sem conexão.
+            raise SemConexao(f"broker indisponível ao publicar o comando: {erro}") from erro
         log.info("cmd %s: %s origem=%s usuario=%s ENVIADO", cid, acao, origem, usuario)
         return cid
 
@@ -201,7 +211,10 @@ class Ponte:
     async def publicar_config(self, device_id: str, payload: dict) -> None:
         if not self.conectado:
             raise SemConexao("backend sem conexão com o broker")
-        await self.cliente.publish(self.topico(device_id, "config"), json.dumps(payload), qos=1, retain=True)
+        try:
+            await self.cliente.publish(self.topico(device_id, "config"), json.dumps(payload), qos=1, retain=True)
+        except aiomqtt.MqttError as erro:
+            raise SemConexao(f"broker indisponível ao publicar a configuração: {erro}") from erro
         self.vivo["config"][device_id] = payload
         log.info("config publicada para %s: %s", device_id, payload)
 

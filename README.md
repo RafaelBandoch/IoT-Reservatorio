@@ -1,266 +1,264 @@
 # AquaNível: monitoramento e controle de caixa d'água
 
 > Projeto da Equipe 4 (catolicasc-g4), Internet das Coisas 2026/2, Prof. Edson Vaz Lopes.
-> Evolução do Medidor de Nível de Reservatório da N1 para o produto da N3 (defesa em 01/12/2026).
+> Evolução do Medidor de Nível de Reservatório da N1 para o produto da N3.
 
-## Problema e usuário
+Quem tem uma caixa d'água abastecida por bomba não sabe o nível de verdade e só
+percebe que a água acabou quando abre a torneira. O AquaNível mede o nível da
+caixa, mostra tudo no celular ou no computador, liga a bomba sozinho quando o
+nível baixa e desliga quando enche, avisa pelo Telegram quando algo sai do
+normal e, se a comunicação cair, desliga a bomba por segurança em vez de
+arriscar transbordar. O usuário é quem cuida da água da casa, do prédio ou do
+estabelecimento (morador, síndico ou zelador).
 
-Quem tem uma caixa d'água abastecida por bomba não sabe o nível de verdade e só percebe que a água acabou quando abre a torneira. Conferir na mão é impreciso, não deixa histórico e não avisa ninguém a distância. O usuário é quem cuida da água da casa, do prédio ou do estabelecimento (morador, síndico ou zelador).
+## Integrantes
 
-## Estado atual (herdado da N1)
-
-Um único ESP32 mede o nível com HC-SR04 corrigido pelo DS18B20, publica no MQTT, liga a bomba (LED) em 10% e desliga em 90%, aceita LIGAR/PARAR pelo painel HTML e grava as leituras no PostgreSQL pelo coletor Python, tudo subindo no Docker Compose. Detalhes da N1 nas seções abaixo.
-
-## Para onde o upgrade vai (N3)
-
-- Dois ESP32: **medidor** (rsv-medidor-01) junto à caixa e **controlador** (rsv-controlador-01) junto à bomba, com relé e mini bomba 5 V reais.
-- Backend FastAPI como único que publica comandos: valida o contrato, grava, aplica a histerese e manda heartbeat ao controlador.
-- Contrato MQTT v1 congelado em [CONTRATOS.md](CONTRATOS.md), com commandId e ciclo ENVIADO, RECEBIDO, EXECUTADO, CONFIRMADO.
-- Painel web com login e perfis, histórico, gráficos e alertas; notificação pelo Telegram.
-- Mosquitto com TLS, OTA nos dois ESP32, testes pytest com GitHub Actions.
-
-## Documentação do CP12
-
-| O quê | Onde |
+| Integrante | GitHub |
 |---|---|
-| Diagrama de blocos, fluxo do dado e do comando | [docs/arquitetura](docs/arquitetura) |
-| Esquemas elétricos, mapa de pinos e BOM | [docs/hardware](docs/hardware) |
-| Fluxogramas do firmware | [docs/firmware](docs/firmware) |
-| Contrato MQTT v1 | [CONTRATOS.md](CONTRATOS.md) |
+| Anttonio Osorio Molinaro Maccagnini | @anttonio06 |
+| Gabriel Lengert Guedes | @GabrielLengertGuedes |
+| Heitor Lopes Reis | @dev-heitorreis |
+| João Pedro Alves de Lima | @CapJao |
+| João Vitor Paranhos | @joaoparanhoss |
+| Rafael Alexandre Alves Bandoch | @RafaelBandoch |
 
----
+## O que o sistema faz
 
-# Projeto N1 — Medidor de Nível de Água do Reservatório
+- **Dois ESP32 com funções separadas, sem fio entre eles.** O **medidor**
+  (`rsv-medidor-01`) fica na caixa: mede o nível com o HC-SR04 corrigido pela
+  temperatura do DS18B20, mostra no LCD e toca o buzzer em alerta, mesmo sem
+  rede. O **controlador** (`rsv-controlador-01`) fica na bomba: aciona o relé e
+  aplica as proteções locais.
+- **O backend decide.** Ele recebe a telemetria, aplica a regra (liga em 10 %,
+  desliga em 90 %) e é o único que manda comandos ao controlador. A cada 10 s
+  manda um heartbeat dizendo se a bomba pode ligar.
+- **Segurança da bomba.** O controlador liga sempre com a bomba desligada,
+  desliga sozinho se ficar 30 s sem heartbeat ou se a bomba passar de 10 minutos
+  ligada, e recusa LIGAR em modo seguro, com nível alto ou sem leitura recente.
+- **Comando com confirmação.** Cada comando tem um `commandId` e passa por
+  ENVIADO, RECEBIDO, EXECUTADO (ou REJEITADO com motivo) e CONFIRMADO.
+- **Painel web com login**, histórico, gráficos, alertas, comandos e parâmetros.
+  O perfil administrador comanda; o visitante só vê.
+- **Alertas no Telegram**: nível crítico, risco de transbordo, falha no sensor,
+  bomba ligada e desligada pela regra, modo seguro e dispositivo offline.
+- **Broker próprio com TLS**, usuário e senha por dispositivo e ACL por tópico.
+- **Atualização de firmware pelo Wi-Fi (OTA)** nos dois ESP32.
+- **140 testes automáticos** do backend rodando no GitHub Actions a cada push.
 
-## 1. Integrantes
-
-* Anttonio Osorio Molinaro Maccagnini - @anttonio06
-* Gabriel Lengert Guedes - @GabrielLengertGuedes
-* João Pedro Alves de Lima - @CapJao
-* João Vitor Paranhos - @joaoparanhoss
-* Rafael Alexandre Alves Bandoch - @RafaelBandoch
-* Heitor Lopes Reis - @dev-heitorreis
-
----
-
-## 2. Família temática
-
-**Família 4 — Nível de reservatório**
-
----
-
-## 3. Projeto
-
-**Sistema IoT de medição de nível de um reservatório de água, com ESP32, sensor ultrassônico, Wi-Fi e MQTT.** O nível é lido, publicado na rede e só então aciona a bomba (LED) automaticamente — a decisão nunca é tomada localmente no mesmo ciclo da leitura. A telemetria é gravada em PostgreSQL e acompanhada em tempo real por um painel web.
-
----
-
-## 4. Problema
-
-É importante acompanhar a quantidade de água disponível em um reservatório para evitar que ele fique vazio ou transborde. A verificação manual do nível é imprecisa e exige alguém conferindo o reservatório constantemente, sem histórico e sem aviso a distância.
-
-O projeto mede o nível de água do reservatório, publica essa leitura pela rede, aciona automaticamente uma bomba quando o nível está baixo, permite ligar/desligar remotamente, alerta (display + MQTT, e buzzer no nível crítico alto e ao fim do enchimento) em situações de nível baixo ou crítico e guarda o histórico em banco de dados.
-
----
-
-## 5. Usuário ou contexto de uso
-
-O sistema pode ser usado em residências, pequenos estabelecimentos, laboratórios ou qualquer ambiente com um reservatório de água. O usuário acompanha o nível pelo display físico (LCD 16x2) ou por um painel web que recebe os dados em tempo real, pode ligar/desligar a bomba manualmente pelo mesmo painel e consulta o histórico no banco (pgAdmin).
-
----
-
-## 6. Objetivo da N1
-
-Um protótipo com ESP32 que:
-
-1. mede a distância até a água com um sensor ultrassônico HC-SR04, com a velocidade do som corrigida pela temperatura (DS18B20);
-2. converte essa distância em percentual de 0% a 100%;
-3. publica essa leitura via MQTT **antes** de qualquer decisão de acionamento;
-4. decide ligar/desligar a bomba (simulada por um LED) a partir do próprio tópico MQTT que ele assina de volta — não a partir do valor calculado localmente;
-5. aceita comando remoto (ligar/desligar manual) por outro tópico MQTT;
-6. confirma o estado da bomba e a execução dos comandos;
-7. sinaliza alertas de nível baixo/crítico no display e via MQTT, com buzzer no nível crítico alto e ao concluir o enchimento;
-8. reconecta sozinho ao Wi-Fi e ao broker depois de uma queda.
-
----
-
-## 7. Componentes usados
-
-* ESP32 DevKit (ESP32-D0WD-V3);
-* Sensor ultrassônico HC-SR04 — TRIG no D33, ECHO no D34 através de um divisor resistivo 1kΩ + 1kΩ (o ECHO do sensor sai em 5V, e o ESP32 não é 5V-tolerante);
-* Display LCD 16x2 com módulo I2C (PCF8574, endereço 0x27 ou 0x3F detectado automaticamente) — SDA no D21, SCL no D22. Sem display, o firmware segue funcionando;
-* LED — representa a bomba/válvula, no D26 (com resistor em série);
-* Buzzer ativo 5V — alerta sonoro, no D27;
-* Sensor de temperatura DS18B20 — DQ no D4, com resistor de pull-up de 4k7 para o 3V3. A temperatura lida a cada 3s corrige a velocidade do som no cálculo da distância; sem o sensor, o firmware assume 25°C;
-* Protoboard, jumpers, cabo USB-C;
-* Computador com Arduino CLI (compilação/gravação) e Docker (broker, banco e coletor).
-
----
-
-## 8. Arquitetura
+## Arquitetura
 
 ```text
-HC-SR04 + DS18B20 ──▶ ESP32 (firmware)
-                         │  mede a cada 100ms, filtra (mediana de 5 + média móvel)
-                         ▼
-                  publica "nivel" a cada 2s (MQTT 1883)
-                         │
-                         ▼
-            Mosquitto (docker, broker do projeto)
-         │                    │                         │
-         ▼                    ▼                         ▼
- ESP32 assina o próprio   coletor Python ──▶ PostgreSQL ──▶ pgAdmin
- "nivel" de volta e SÓ   (amostragem)                       (histórico)
- AÍ decide ligar/desligar
- a bomba (LED)           painel-reservatorio.html
-         │               (navegador, WebSocket 9001)
-         ▼
- LED (bomba) + buzzer + LCD
+ ESP32 medidor                                                ESP32 controlador
+ HC-SR04, DS18B20,         MQTT com TLS (porta 8883)          relé + bomba
+ LCD, buzzer        ───telemetria, alerta───▶   ┌─────────┐   ◀── cmd, heartbeat, config
+                    ◀──────config─────────────  │Mosquitto│   ──▶ ack, estado
+                                                └────┬────┘
+                                                     │
+                                       ┌─────────────▼─────────────┐
+                                       │ Backend FastAPI           │──▶ Telegram
+                                       │ valida, grava, decide,    │
+                                       │ API REST com login (JWT)  │
+                                       └──────┬─────────────┬──────┘
+                                              │             │ HTTP
+                                         PostgreSQL     Painel web
+                                       (histórico)    (navegador)
 ```
 
-A leitura sempre atravessa a rede (publica → broker → assina de volta) antes de qualquer atuação. O sensor nunca aciona o atuador diretamente dentro do mesmo `loop()`.
+Broker, backend e banco sobem juntos pelo Docker Compose num computador da
+mesma rede dos ESP32. Os ESP32 acham esse computador pelo nome `aquanivel.local`
+(mDNS). Diagramas detalhados em [docs/arquitetura](docs/arquitetura) e o
+contrato MQTT em [CONTRATOS.md](CONTRATOS.md) (v1) e
+[CONTRATOS-v1.1.md](CONTRATOS-v1.1.md) (o que mudou na implementação).
 
-Por padrão o broker é o **Mosquitto local** do `docker-compose.yml`: o ESP32, o painel e o coletor conectam nele, sem depender da internet. Opcionalmente o Mosquitto pode fazer *bridge* com um broker remoto (`broker.hivemq.com` ou um cluster HiveMQ Cloud com TLS) — detalhes em [EXECUCAO.md](EXECUCAO.md).
+## Hardware
 
-### Lógica de controle
+Pinos, materiais e o que mudou em relação ao projeto do CP12 em
+[docs/hardware/mapa_de_pinos.md](docs/hardware/mapa_de_pinos.md); lista de
+materiais em [docs/hardware/bom.md](docs/hardware/bom.md).
 
-| Situação | Ação |
-| --- | --- |
-| nível ≤ 10% e bomba parada | liga a bomba (`LIGADA:AUTO`, alerta `ACIONAMENTO_AUTOMATICO`) |
-| nível ≥ 90% com a bomba ligada | desliga a bomba, toca o buzzer 3 vezes (alerta `ENCHIMENTO_CONCLUIDO`) |
-| nível < 15% | alerta `NIVEL_BAIXO` |
-| nível ≥ 95% | alerta `CRITICO_ALTO` e buzzer intermitente |
-| `PARAR` manual com nível ≤ 10% | a bomba não religa sozinha até o nível passar de 15% |
+| Medidor | Pino | Controlador | Pino |
+|---|---|---|---|
+| HC-SR04 TRIG | GPIO33 | Relé JQC3F-03VDC (In1), jumper em High | GPIO26 |
+| HC-SR04 ECHO | GPIO34 | Alimentação da bobina do relé | 3V3 |
+| DS18B20 | GPIO4 | Bomba 5 V | contato do relé, carregador próprio |
+| LCD I2C (SDA, SCL) | GPIO21, GPIO22 | | |
+| Buzzer | GPIO27 | | |
 
-### Tópicos MQTT (prefixo `catolicasc-g4/reservatorio`)
-
-| Tópico | Sentido | Conteúdo |
-| --- | --- | --- |
-| `.../nivel` | ESP32 → broker → ESP32 (e painel/coletor) | percentual 0-100, publicado a cada 2s; é a mensagem que dispara a decisão automática |
-| `.../distancia` | ESP32 → broker | distância filtrada em cm |
-| `.../temperatura` | ESP32 → broker | temperatura do DS18B20 em °C, usada no cálculo da distância |
-| `.../bomba` | ESP32 → broker | `DESLIGADA`, `LIGADA:AUTO` ou `LIGADA:MANUAL` (retido) |
-| `.../alerta/nivel` | ESP32 → broker | `NORMAL`, `NIVEL_BAIXO`, `CRITICO_ALTO`, `ACIONAMENTO_AUTOMATICO`, `ENCHIMENTO_CONCLUIDO` |
-| `.../status` | ESP32 → broker | `online` (retido) / `offline` (Last Will) |
-| `.../comando/bomba` | painel → broker → ESP32 | `LIGAR` ou `PARAR` (QoS 1) |
-| `.../comando/bomba/confirmacao` | ESP32 → broker | `LIGAR:OK`, `PARAR:OK` ou `ERRO:comando_invalido` |
-
-### Persistência
-
-O coletor (`collector/collector.py`) assina `catolicasc-g4/reservatorio/#` e grava em duas tabelas (`db/init.sql`):
-
-* `leituras` — nível, distância, temperatura e bomba, com amostragem: uma linha a cada 30s, ou na hora se o nível variar mais de 5 pontos percentuais;
-* `eventos` — toda publicação em `bomba`, `status`, `alerta/nivel` e `comando/bomba/confirmacao`.
-
-> Atenção: hoje o `docker-compose.yml` fixa o coletor em `MQTT_HOST: broker.hivemq.com`. Com o firmware publicando no Mosquitto local e a bridge desligada (padrão), o coletor não recebe nada e o banco fica vazio — é preciso apontar o coletor para `mosquitto` ou ligar a bridge.
-
-O `db/views.sql` cria views prontas para a apresentação (`v_estado_atual`, `v_historico_1h`, `v_eventos_hoje`, `v_bomba_janelas`, `v_tempo_bomba`, `v_resumo_diario`).
-
-### Estrutura do repositório
+## Estrutura do repositório
 
 | Caminho | O que é |
 | --- | --- |
-| `medidor/` | firmware do ESP32 medidor (rsv-medidor-01): HC-SR04, DS18B20, LCD e buzzer |
-| `controlador/` | firmware do ESP32 controlador (rsv-controlador-01): relé da bomba e LEDs de status |
+| `medidor/`, `controlador/` | firmwares dos dois ESP32 |
 | `broker_tls.h` | conexão TLS com o broker, comum aos dois firmwares |
-| `credenciais.exemplo.h` | modelo de Wi-Fi, broker e senha do OTA (copiar para `credenciais.h`, que não é versionado) |
-| `compilar.sh`, `ota.sh` | compila com o Arduino CLI e grava pelo Wi-Fi (OTA) |
+| `credenciais.exemplo.h` | modelo de Wi-Fi, senhas do broker e do OTA (copiar para `credenciais.h`, que não é versionado) |
+| `compilar.sh`, `ota.sh` | compila com o Arduino CLI e grava pelo Wi-Fi |
 | `libraries.txt` | bibliotecas Arduino usadas |
-| `docker-compose.yml`, `.env.example` | Mosquitto (TLS), PostgreSQL, backend e pgAdmin com um comando |
+| `docker-compose.yml`, `.env.example` | broker, banco, backend e pgAdmin com um comando |
 | `mosquitto/` | configuração do broker, ACL e script dos certificados |
-| `anunciar_broker.py` | anuncia o computador como `aquanivel.local` para os ESP32 acharem o broker |
+| `anunciar_broker.py` | anuncia o computador como `aquanivel.local` para os ESP32 |
 | `liberar-firewall.ps1` | libera no Windows as portas do broker, do OTA e do mDNS |
-| `backend/` | FastAPI: valida o contrato, grava, decide a bomba e serve a API; testes em `backend/tests/` |
-| `painel/` | painel web com login, servido pelo backend |
+| `backend/` | FastAPI: contrato, regras, API, Telegram; testes em `backend/tests/` |
+| `painel/` | painel web, servido pelo backend |
 | `pgadmin/` | servidor do pgAdmin pré-cadastrado |
-| `backend-teste/` | backend mínimo em Python usado nos testes de bancada |
-| `CONTRATOS.md` | contrato MQTT v1 |
-| `TESTE-DOIS-ESP32.md` | ligação, gravação, OTA e roteiro de testes dos dois ESP32 |
-| `docs/` | arquitetura, hardware (mapa de pinos, BOM, esquemas) e fluxogramas |
-| `n1/` | firmware, painel, coletor e simulação da N1, mantidos como histórico (ver `n1/LEIAME.md`) |
+| `backend-teste/` | backend mínimo usado nos testes de bancada |
+| `CONTRATOS.md`, `CONTRATOS-v1.1.md` | contrato MQTT v1 (congelado no CP12) e a revisão v1.1 com o que mudou na implementação |
+| `TESTE-DOIS-ESP32.md` | ligação, gravação, OTA e roteiro de testes |
+| `docs/` | arquitetura, hardware, firmware, testes de falha e telas |
+| `n1/` | versão da N1, mantida como histórico (ver [n1/LEIAME.md](n1/LEIAME.md)) |
 
----
+## Como executar
 
-## 9. Como rodar
+### Pré-requisitos
 
-### 9.1 Stack (broker, banco e coletor)
+- **Docker Desktop** (com Docker Compose).
+- **Python 3.12** com `pip install zeroconf` (para o `anunciar_broker.py`).
+- **Arduino CLI** com o core do ESP32 3.3.x e as bibliotecas do `libraries.txt`:
+  ```bash
+  arduino-cli core install esp32:esp32
+  arduino-cli lib install PubSubClient ArduinoJson "LiquidCrystal I2C" DallasTemperature OneWire
+  ```
+- No Windows, os scripts `.sh` rodam no **Git Bash** (que já traz o `openssl`).
+- Um roteador ou hotspot **2,4 GHz** em que os ESP32 e o computador fiquem na
+  mesma rede.
+
+### 1. Configuração
 
 ```bash
+git clone https://github.com/RafaelBandoch/IoT-Reservatorio.git
+cd IoT-Reservatorio
 cp .env.example .env
-cp pgadmin/pgpass.example pgadmin/pgpass   # trocar o placeholder pela senha do .env
+cp pgadmin/pgpass.example pgadmin/pgpass
+```
+
+No `.env`, troque todos os `troque-aqui`. As senhas e o segredo dos tokens podem
+ser gerados com:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(18))"
+```
+
+No `pgadmin/pgpass`, ponha a mesma senha de `POSTGRES_PASSWORD`.
+
+### 2. Certificados do broker (uma vez só)
+
+```bash
+./mosquitto/gerar-certificados.sh
+```
+
+Gera a CA própria e o certificado do broker em `mosquitto/certs/` e o
+`certificado_ca.h` para os firmwares. Gere uma vez só: os ESP32 levam a CA
+embutida, e uma CA nova exige gravar os dois de novo.
+
+### 3. Subir broker, backend e banco
+
+```bash
 docker compose up -d --build
 ```
 
-Sobe o Mosquitto (1883 e WebSocket 9001), o PostgreSQL (5432), o coletor e o pgAdmin (http://localhost:5050). Passo a passo completo em [EXECUCAO.md](EXECUCAO.md).
+- Painel: http://localhost:8000 (usuário e senha do `ADMIN_*` do `.env`; o
+  `VISUALIZADOR_*` só vê, sem comandar).
+- Documentação da API: http://localhost:8000/docs
+- pgAdmin: http://localhost:5050
 
-### 9.2 Firmware
+### 4. Deixar o computador acessível aos ESP32
 
-1. Copie o modelo de credenciais:
-   ```bash
-   cp credenciais.exemplo.h credenciais.h
-   ```
-   Ele já vem pronto para o simulador Wokwi (`Wokwi-GUEST` + `host.wokwi.internal`). Na placa real, preencha `WIFI_SSID`/`WIFI_SENHA` com uma rede 2,4 GHz e troque `MQTT_BROKER` pelo IP do computador que roda o Docker, na mesma rede. Para usar o broker público, ponha `"broker.hivemq.com"`; para um cluster HiveMQ Cloud, `MQTT_TLS 1` e as credenciais.
-2. Compile (Linux/macOS ou Git Bash no Windows):
-   ```bash
-   ./compilar.sh
-   ```
-3. **Simulador:** no VS Code/Cursor com a extensão Wokwi, `F1 > Wokwi: Start Simulator` (usa `wokwi.toml` e `diagram.json`). Atenção: os diagramas do Wokwi usam um display OLED SSD1306, e o firmware atual só controla o LCD 16x2 — no simulador a tela não mostra os dados; acompanhe pelo monitor serial e pelo painel.
-   **Placa real:** com o ESP32 conectado por USB:
-   ```bash
-   arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32doit-devkit-v1 --input-dir build build
-   ```
-   (troque `COM3` pela porta serial correta)
-4. Acompanhe pelo monitor serial (115200 baud). Comandos disponíveis: `QUEDA` (derruba o Wi-Fi para testar a reconexão), `STATUS`, `LIGAR`, `PARAR`, `I2C` (varre o barramento do display).
+Numa janela de terminal que fica aberta enquanto o sistema roda:
 
-### 9.3 Painel
+```bash
+python anunciar_broker.py
+```
 
-Abra `painel-reservatorio.html` no navegador. Ele conecta em `ws://localhost:9001` (Mosquitto local), mostra nível, distância, temperatura, bomba e alerta em tempo real e tem o botão de ligar/desligar a bomba. Para abrir em outro aparelho da rede, troque `localhost` pelo IP do computador na constante `BROKER`.
+No Windows, rode uma vez o `liberar-firewall.ps1` num PowerShell aberto como
+administrador (libera as portas 8883, 3233 e 5353). Se houver antivírus com
+firewall próprio, marque a rede do hotspot como confiável nele também.
 
----
+### 5. Gravar os ESP32
 
-## 10. Backlog
+```bash
+cp credenciais.exemplo.h credenciais.h
+```
 
-| Tarefa | Status |
-| --- | --- |
-| Criar repositório | Feito |
-| Migrar de Arduino Uno para ESP32 | Feito |
-| Ligar sensor ultrassônico (com divisor resistivo) | Feito |
-| Ligar display LCD 16x2 via I2C (com detecção automática de endereço) | Feito |
-| Calcular nível em porcentagem, com filtro de mediana + média móvel | Feito |
-| Conectar ao Wi-Fi com reconexão automática | Feito |
-| Publicar telemetria via MQTT | Feito |
-| Reestruturar decisão automática para depender do tópico, não do cálculo local | Feito |
-| Implementar comando remoto (ligar/desligar) | Feito |
-| Confirmar estado/ação via MQTT | Feito |
-| Adicionar alerta sonoro (buzzer) e visual (display) | Feito |
-| Montar painel web (MQTT sobre WebSocket) | Feito |
-| Subir broker próprio (Mosquitto) com bridge opcional para broker remoto | Feito |
-| Persistir telemetria e eventos em PostgreSQL (coletor + views) | Feito |
-| Integrar sensor de temperatura (DS18B20) | Feito |
-| Calibrar `D_VAZIO`/`D_CHEIO` para o recipiente real (23,5cm vazio / 4cm cheio) | Feito |
-| Testar reconexão após queda de Wi-Fi/broker (comando `QUEDA`, ver EXECUCAO.md) | Feito |
+No `credenciais.h`, preencha o Wi-Fi (2,4 GHz), as senhas
+`MQTT_SENHA_MEDIDOR` e `MQTT_SENHA_CONTROLADOR` (as mesmas do `.env`) e a
+`OTA_SENHA`. Depois:
 
----
+```bash
+./compilar.sh medidor
+./compilar.sh controlador
+arduino-cli board list          # descobre as portas COM
+arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32doit-devkit-v1 --input-dir build/medidor
+arduino-cli upload -p COM4 --fqbn esp32:esp32:esp32doit-devkit-v1 --input-dir build/controlador
+```
 
-## 11. Primeiro risco técnico
+As próximas gravações podem ser pelo Wi-Fi, sem cabo:
 
-### Risco
+```bash
+./ota.sh medidor
+./ota.sh controlador
+```
 
-O sensor ultrassônico pode apresentar leituras imprecisas, instáveis ou inválidas, dependendo da fiação (o ECHO sai em 5V e passa por um divisor resistivo até o ESP32), do posicionamento e de ruído elétrico no barramento.
+Detalhes da ligação, da gravação e do OTA em
+[TESTE-DOIS-ESP32.md](TESTE-DOIS-ESP32.md). Monitor serial a 115200 baud;
+comandos: `STATUS`, `QUEDA` (derruba o Wi-Fi para testar a reconexão), `I2C`
+(medidor) e `BROKER <ip>` (IP do computador, se o mDNS não funcionar na rede).
 
-### Impacto
+### 6. Alertas no Telegram (opcional)
 
-Leituras inválidas poderiam travar o cálculo do nível ou, pior, ser interpretadas como "reservatório cheio" por engano.
+1. No Telegram, fale com o **@BotFather**, mande `/newbot` e guarde o token.
+2. Mande qualquer mensagem para o bot criado e abra
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` para ver o `chat.id`.
+3. Ponha `TELEGRAM_TOKEN` e `TELEGRAM_CHAT_ID` no `.env` e rode
+   `docker compose up -d backend`.
 
-### Mitigação já implementada
+### 7. Testes automáticos
 
-* Leituras fora da faixa fisicamente possível (`d < 2cm` ou `d > 450cm`) ou sem eco são descartadas, não usadas no cálculo.
-* Um contador de falhas seguidas (`falhasSensor`) loga no serial, a cada 50 falhas, um diagnóstico de fiação (nível do ECHO em repouso, pinos usados). O DS18B20 tem diagnóstico equivalente.
-* As leituras válidas passam por filtro de mediana (últimas 5) + média móvel exponencial, reduzindo o efeito de picos isolados.
-* A velocidade do som é corrigida pela temperatura medida, em vez de um valor fixo.
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
 
----
+Os mesmos testes rodam no GitHub Actions a cada push e pull request
+([.github/workflows/testes.yml](.github/workflows/testes.yml)).
 
-## 12. Dúvidas para o professor
+## Requisitos da N3
 
-* O broker próprio (Mosquitto local, sem autenticação) é suficiente para a demonstração da N1, ou é esperado um broker na internet (público ou HiveMQ Cloud com TLS)?
+| Req. | Como foi atendido | Onde |
+|---|---|---|
+| R1 Hardware | HC-SR04 e DS18B20 (duas entradas) e relé com bomba real | `docs/hardware` |
+| R2 Firmware | leitura não bloqueante, alerta local sem rede (LCD e buzzer), estado seguro, reconexão, configuração na NVS alterável pelo painel, NTP ou `NAO_SINCRONIZADO`, logs | `medidor/`, `controlador/` |
+| R3 Contrato | contrato v1 com versão, unidades, `commandId`, QoS e Last Will; mudanças registradas na v1.1 | `CONTRATOS.md`, `CONTRATOS-v1.1.md` |
+| R4 Backend | valida, descarta e registra inválidos, grava e expõe API | `backend/app` |
+| R5 Banco | medições, comandos e confirmações, alertas, estado, usuários; migrações Alembic | `backend/alembic` |
+| R6 Interface | painel com valor atual, histórico, online e offline, alertas e comandos | `painel/` |
+| R7 Ciclo de comando | ENVIADO, RECEBIDO, EXECUTADO ou REJEITADO com motivo, CONFIRMADO | painel, `comandos` |
+| R8 Decisão remota | regra 10/90 no backend com margem 90/87 | `backend/app/logica.py` |
+| R9 Segurança básica | login JWT, só admin comanda, segredos fora do git | `.env`, `credenciais.h` |
+| R10 Falhas | 4 cenários testados com evidência | [docs/testes-de-falha.md](docs/testes-de-falha.md) |
+| R11 Entrega | este README, release da versão defendida | este arquivo |
+| R12 Orquestração | `docker compose up -d` sobe broker, backend e banco | `docker-compose.yml` |
+| R13 Dispositivos | dois ESP32 físicos com `deviceId` próprio | painel |
+| R14 Painel analítico | gráfico de histórico, média, mínimo e máximo, tempo de bomba ligada, acionamentos | painel |
+| R15 Notificação | alertas no Telegram, com reenvio se a internet cair | `backend/app/telegram.py` |
+| R16 Segurança avançada | TLS no MQTT com certificado validado pelos ESP32 e perfis admin e visitante | `mosquitto/`, `broker_tls.h` |
+| R17 OTA | ArduinoOTA com senha nos dois ESP32, com a bomba desligada durante a gravação | `ota.sh` |
+| R18 Testes e CI | 140 testes pytest no GitHub Actions | `backend/tests` |
+
+## Limitações conhecidas
+
+- O servidor (broker, backend e banco) roda num computador da mesma rede; num
+  produto vendido ele iria para a nuvem com o mesmo Docker Compose.
+- O hotspot do celular com bateria baixa deixou o Wi-Fi do medidor instável em
+  alguns testes (quedas por tempo esgotado no broker, com reconexão automática).
+  Na demonstração, o celular fica carregando e perto da caixa.
+- Diodo, capacitor e fusível previstos para a bomba no CP12 não foram montados;
+  o ruído do motor no LCD foi resolvido encurtando e afastando os fios.
+- A rede Wi-Fi e as senhas ficam gravadas no firmware (`credenciais.h`); trocar
+  de rede exige gravar de novo.
+
+## Reaproveitamento
+
+Bibliotecas usadas como dependências, sem alteração: PubSubClient, ArduinoJson,
+LiquidCrystal I2C, DallasTemperature, OneWire e ArduinoOTA (firmware); FastAPI,
+aiomqtt, Pydantic, SQLAlchemy, Alembic, PyJWT, bcrypt e httpx (backend);
+Chart.js (painel); Eclipse Mosquitto e PostgreSQL (infraestrutura).

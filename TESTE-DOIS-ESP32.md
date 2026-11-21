@@ -21,8 +21,7 @@ O medidor só mede e alerta; o controlador só executa. Os dois **não têm fio 
 | Pino | Ligado a |
 |---|---|
 | GPIO26 | Bomba: In1 do relé JQC3F-03VDC (DC+ no 3V3, DC- no GND, jumper em High); a bomba tem alimentação própria pelo contato do relé. ALTO = bomba ligada |
-| GPIO25 | LED verde (opcional): aceso em AUTOMATICO, piscando em MANUAL |
-| GPIO27 | LED vermelho (opcional): aceso em SEGURO |
+| GPIO25, GPIO27 | LEDs de status verde e vermelho: previstos, não montados (o estado aparece no painel) |
 
 ## Como gravar
 
@@ -59,7 +58,7 @@ O que acontece durante a gravação (o loop fica parado enquanto o firmware cheg
 
 | Placa | Antes de gravar | Durante | Depois |
 |---|---|---|---|
-| Controlador | Desliga a bomba (GPIO26 em LOW) e publica `estado` com `modo=SEGURO`, `motivoSeguro=OTA` | LED vermelho aceso, verde piscando; serial mostra o percentual | Reinicia em `SEGURO/BOOT` e sai sozinho com 3 heartbeats. Se a gravação falhar, o firmware anterior continua e o estado fica `SEGURO/OTA_FALHOU`, que também sai com 3 heartbeats |
+| Controlador | Desliga a bomba (GPIO26 em LOW) e publica `estado` com `modo=SEGURO`, `motivoSeguro=OTA` | Painel mostra SEGURO/OTA; serial mostra o percentual | Reinicia em `SEGURO/BOOT` e sai sozinho com 3 heartbeats. Se a gravação falhar, o firmware anterior continua e o estado fica `SEGURO/OTA_FALHOU`, que também sai com 3 heartbeats |
 | Medidor | Cala o buzzer e publica `status` com `online:false`; o backend responde na hora com `liberaBomba=false` (`SEM_LEITURA`) | LCD mostra `Atualizando...` e o percentual | Reinicia e publica `online:true` com o `fw` novo. Se falhar, mostra `OTA falhou` e reinicia com o firmware anterior |
 
 Teste da defesa: com o painel aberto, grave o controlador por OTA. Esperado: bomba desliga, alerta `MODO_SEGURO` ("atualização de firmware pelo Wi-Fi em andamento"), controlador some e volta com o `fw` novo, e em cerca de 30 s está de novo em `AUTOMATICO`.
@@ -68,9 +67,11 @@ Teste da defesa: com o painel aberto, grave o controlador por OTA. Esperado: bom
 
 Anote, para cada teste, o esperado, o observado e a evidência (print do serial e do terminal do backend).
 
+> **Resultados dos 4 testes de falha obrigatórios (R10)**, com horários, registros do banco, prints do painel, do Telegram e foto do LCD: [docs/testes-de-falha.md](docs/testes-de-falha.md).
+
 | # | Teste | Como fazer | Esperado |
 |---|---|---|---|
-| 1 | Boot seguro | Ligue o controlador com o backend parado | GPIO26 em LOW desde o início, LED vermelho aceso, `estado` com `modo=SEGURO`, `motivoSeguro=BOOT`. Nada liga sozinho |
+| 1 | Boot seguro | Ligue o controlador com o backend parado | GPIO26 em LOW desde o início (relé desarmado), `estado` com `modo=SEGURO`, `motivoSeguro=BOOT`. Nada liga sozinho |
 | 2 | Saída do SEGURO | Rode o backend | Após 3 heartbeats válidos seguidos (~20 a 30 s) o serial mostra `SAINDO do SEGURO` e o estado vira `AUTOMATICO` |
 | 3 | Ligar e desligar manual | `ligar` e depois `desligar` | Acks `RECEBIDO` e `EXECUTADO`, relé do GPIO26 arma e desarma (a bomba liga e desliga), `modo=MANUAL`. Após 5 min sem comando (ou com `auto`) volta a `AUTOMATICO` |
 | 4 | Heartbeat perdido | Com a bomba ligada, digite `pausa` | Em até 30 s a bomba desliga e o estado vira `SEGURO` com `motivoSeguro=SEM_HEARTBEAT`. `volta` tira do SEGURO depois de 3 heartbeats |

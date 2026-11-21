@@ -81,20 +81,47 @@ async def test_modo_seguro_distingue_o_motivo():
     await t.fechar()
 
 
-async def test_falha_no_envio_nao_para_a_fila():
-    enviadas = []
+async def test_sem_internet_reenvia_na_ordem_quando_volta():
+    enviadas, esperas, falhas = [], [], [3]
 
     async def enviar(msg):
-        if not enviadas:
-            enviadas.append("falhou")
-            raise RuntimeError("Telegram fora do ar")
+        if falhas[0]:
+            falhas[0] -= 1
+            raise OSError("Name or service not known")
         enviadas.append(msg)
 
-    t = Telegram("token", "123", enviar=enviar, relogio=Relogio())
+    async def esperar(s):
+        esperas.append(s)
+
+    t = Telegram("token", "123", enviar=enviar, relogio=Relogio(), esperar=esperar)
+    await t("rsv-controlador-01", "OFFLINE", "rsv-controlador-01 ficou offline")
+    await t("rsv-controlador-01", "ONLINE", "rsv-controlador-01 voltou")
+    await esvaziar(t)
+    await asyncio.sleep(0.05)
+    assert esperas == [5, 10, 20]                   # recuo entre as tentativas
+    assert "sem conexão" in enviadas[0] and "conectado de novo" in enviadas[1]   # nada perdido, na ordem
+    await t.fechar()
+
+
+async def test_desiste_depois_do_tempo_maximo():
+    from app.telegram import REENVIO_MAX_S
+    enviadas, esperas = [], []
+
+    async def enviar(msg):
+        if "crítico" in msg:
+            raise OSError("sem rede")
+        enviadas.append(msg)
+
+    async def esperar(s):
+        esperas.append(s)
+
+    t = Telegram("token", "123", enviar=enviar, relogio=Relogio(), esperar=esperar)
     await t("rsv-medidor-01", "NIVEL_CRITICO", "nível 8 %")
     await t("rsv-medidor-01", "NORMALIZADO", "nível 15 %")
     await esvaziar(t)
-    assert enviadas[0] == "falhou" and "normalizado" in enviadas[1]
+    await asyncio.sleep(0.05)
+    assert sum(esperas) <= REENVIO_MAX_S
+    assert len(enviadas) == 1 and "normalizado" in enviadas[0]   # o seguinte não fica preso
     await t.fechar()
 
 

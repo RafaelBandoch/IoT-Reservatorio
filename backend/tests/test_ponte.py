@@ -214,6 +214,35 @@ async def test_medidor_offline_gera_alerta_e_heartbeat_imediato(enviar, ponte, r
     assert repo.alertas[-1]["codigo"] == "ONLINE"
 
 
+async def test_broker_caindo_nao_impede_registrar_o_offline(enviar, ponte, repo, avisos, exemplo):
+    """Teste de falha 2 (19/11): com o broker parando, o heartbeat de bloqueio falha
+    ao publicar, mas o OFFLINE do medidor tem que ser gravado e avisado assim mesmo."""
+    import aiomqtt
+    await preparar(ponte, enviar, exemplo)
+    await enviar("rsv-medidor-01", "telemetria", exemplo("telemetria", nivel=nivel(50)))
+
+    async def broker_caindo(*_, **__):
+        raise aiomqtt.MqttError("Unspecified error")
+    ponte.cliente.publish = broker_caindo
+    await enviar("rsv-medidor-01", "status", exemplo("status"))   # Last Will: online false
+    assert repo.conexoes[-1]["online"] is False
+    assert repo.alertas[-1]["codigo"] == "OFFLINE"
+    assert avisos[-1][1] == "OFFLINE"
+
+
+async def test_comando_com_broker_caindo_vira_sem_conexao(ponte):
+    import aiomqtt
+    from app.ponte import SemConexao
+
+    async def broker_caindo(*_, **__):
+        raise aiomqtt.MqttError("Unspecified error")
+    ponte.cliente.publish = broker_caindo
+    with pytest.raises(SemConexao):
+        await ponte.enviar_comando("LIGAR", "manual", "admin")
+    with pytest.raises(SemConexao):
+        await ponte.publicar_config("rsv-medidor-01", {"v": 1, "periodo_s": 3})
+
+
 async def test_primeiro_status_nao_gera_alerta(enviar, repo):
     await enviar("rsv-medidor-01", "status", {"v": 1, "deviceId": "rsv-medidor-01", "online": False})
     assert repo.alertas == [] and len(repo.conexoes) == 1

@@ -28,6 +28,8 @@ log = logging.getLogger("aquanivel.telegram")
 
 REPETICAO_S = 600
 TIMEOUT_S = 10
+REENVIO_INICIAL_S = 5      # sem internet: tenta de novo em 5, 10, 20, 40, 60, 60... s
+REENVIO_MAX_S = 30 * 60    # e desiste do alerta depois de 30 min sem conseguir
 FUSO = timezone(timedelta(hours=-3))   # horário de Brasília, só para o texto
 
 NOMES = {"rsv-medidor-01": "medidor", "rsv-controlador-01": "controlador"}
@@ -59,10 +61,12 @@ def formatar(device_id: str, codigo: str, texto: str, quando: Optional[datetime]
 class Telegram:
     def __init__(self, token: str, chat_id: str,
                  enviar: Optional[Callable[[str], Awaitable[None]]] = None,
-                 relogio: Callable[[], float] = time.monotonic):
+                 relogio: Callable[[], float] = time.monotonic,
+                 esperar: Callable[[float], Awaitable[None]] = asyncio.sleep):
         self.token, self.chat_id = token, chat_id
         self._enviar = enviar or self._enviar_bot_api
         self._relogio = relogio
+        self._esperar = esperar
         self._ultimo: dict[str, tuple[str, float]] = {}   # device -> (chave, instante)
         self._fila: Optional[asyncio.Queue] = None
         self._tarefa: Optional[asyncio.Task] = None
@@ -90,11 +94,29 @@ class Telegram:
     async def _trabalhar(self) -> None:
         while True:
             mensagem = await self._fila.get()
+            await self._entregar(mensagem)
+
+    async def _entregar(self, mensagem: str) -> None:
+        """Tenta até conseguir ou até REENVIO_MAX_S. Sem internet (o próprio Wi-Fi
+        caiu), o alerta espera e sai quando a rede volta, com o horário do evento,
+        e não do envio. Os seguintes esperam na fila, na ordem."""
+        titulo = mensagem.splitlines()[0]
+        espera, total = REENVIO_INICIAL_S, 0.0
+        while True:
             try:
                 await self._enviar(mensagem)
-                log.info("telegram: alerta enviado (%s)", mensagem.splitlines()[0])
+                log.info("telegram: alerta enviado (%s)%s", titulo,
+                         f" depois de {total:.0f} s sem conseguir" if total else "")
+                return
             except Exception as erro:
-                log.warning("telegram: falha ao enviar: %s", erro)
+                if total == 0:
+                    log.warning("telegram: falha ao enviar (%s), tentando de novo: %s", titulo, erro)
+                if total + espera > REENVIO_MAX_S:
+                    log.warning("telegram: desistindo do alerta (%s) depois de %.0f s", titulo, total)
+                    return
+                await self._esperar(espera)
+                total += espera
+                espera = min(espera * 2, 60)
 
     async def _enviar_bot_api(self, mensagem: str) -> None:
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as cliente:
