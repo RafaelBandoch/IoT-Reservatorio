@@ -25,7 +25,7 @@
 #include <stdarg.h>
 
 #define DEVICE_ID "rsv-medidor-01"
-#define FW_VERSAO "2.3.1"
+#define FW_VERSAO "2.3.2"
 
 #ifndef OTA_SENHA
   #error "defina OTA_SENHA no credenciais.h (modelo em credenciais.exemplo.h)"
@@ -114,7 +114,10 @@ enum TipoTela { SEM_TELA, TELA_LCD };
 TipoTela tipoTela = SEM_TELA;
 uint8_t enderLcd = 0;                 // endereco I2C do LCD em uso
 unsigned long tLcdInit = 0;           // ultima (re)inicializacao do LCD
-const unsigned long LCD_REINICIA_MS = 3000;   // realinhamento sem limpar a tela
+// Realinhamento sem limpar a tela. Cada realinhamento dá uma piscada rápida;
+// com os fios do LCD curtos e longe da bomba o embaralhamento ficou raro, então
+// 30 s basta para a tela se corrigir sem piscar o tempo todo.
+const unsigned long LCD_REINICIA_MS = 30000;
 // I2C do LCD a 50 kHz (o padrao e 100 kHz): mais tolerante a ruido e a fio
 // longo, e o LCD nao precisa de mais velocidade que isso.
 const uint32_t I2C_LCD_HZ = 50000;

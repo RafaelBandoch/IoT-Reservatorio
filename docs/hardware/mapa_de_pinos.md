@@ -55,6 +55,6 @@ montados: dentro da caixa fechada não seriam vistos.
 | Conversor de nível BSS138 no I2C do LCD | SDA e SCL ligados direto | Funciona com os pull-ups do módulo; o firmware reduz o I2C para 50 kHz |
 | Buzzer por transistor BC547 | Buzzer direto no GPIO27 | Buzzer de baixa corrente, toca direto do pino |
 | LEDs de status verde e vermelho | Não montados | Ficariam escondidos na caixa; o estado está no painel e no Telegram |
-| Diodo 1N4007, capacitores e fusível na bomba | Não montados | O ruído do motor embaralhava o LCD; resolvido encurtando os fios do LCD e afastando-os dos fios da bomba e do relé. O firmware também realinha o LCD a cada 3 s como garantia. O diodo e o capacitor de 100 nF nos terminais da bomba continuam recomendados |
+| Diodo 1N4007, capacitores e fusível na bomba | Não montados | O ruído do motor embaralhava o LCD; resolvido encurtando os fios do LCD e afastando-os dos fios da bomba e do relé. O firmware também realinha o LCD a cada 30 s como garantia. O diodo e o capacitor de 100 nF nos terminais da bomba continuam recomendados |
 | Placas perfuradas e duas caixas | Uma protoboard numa caixa, com os fios do LCD soldados | Montagem possível no prazo |
 | Fonte B de 5 V / 2 A para a bomba | Carregador USB próprio da bomba | Mesmo papel: alimentação separada dos ESP32 |

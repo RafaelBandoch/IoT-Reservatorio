@@ -25,7 +25,7 @@
 #include <stdarg.h>
 
 #define DEVICE_ID "rsv-controlador-01"
-#define FW_VERSAO "1.2.0"
+#define FW_VERSAO "1.2.2"
 
 #ifndef OTA_SENHA
   #error "defina OTA_SENHA no credenciais.h (modelo em credenciais.exemplo.h)"
